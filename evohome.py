@@ -191,18 +191,21 @@ class evoController(ClimateDevice):
 
 
     def set_operation_mode(self: ClimateDevice, operation: str) -> None:
-        """Set the operating mode of the controller.  Note that 'AutoWithReset is not a
-        mode in itself: instead, it leads to 'Auto' mode after resetting all the zones
+        """Set the operating mode of the controller.  Note that 'AutoWithReset may not be a
+        mode in itself: instead, it _should_ lead to 'Auto' mode after resetting all the zones
         to 'FollowSchedule'.  'HeatingOff' simply sets setpoints to a minimum value."""
         _LOGGER.info("Just started: set_operation_mode(controller, %s), operation")
 
 ### Controller: operations vs (operating) modes...
 
-# "AutoWithReset" leads to "Auto" mode, after resetting all the zones to "FollowSchedule"
-        if operation == "AutoWithReset":
-          self._operating_mode = "Auto"
-          self.client.locations[0]._gateways[0]._control_systems[0]._set_status(5)
-          
+# "AutoWithReset" _should_ lead to "Auto" mode (but doesn't), after resetting all the zones to "FollowSchedule"
+        if operation == "AutoWithReset":a private function in the client API (it is not exposed)
+        ## here, we call 
+          OPERATING_MODE_AUTOWITHRESET = 5
+          self.client.locations[0]._gateways[0]._control_systems[0]._set_status(OPERATING_MODE_AUTOWITHRESET)
+          self._operating_mode = "Auto"  ## this doesn't work
+
+## I'm not sure if this works either...          
           for child in self._childZones:
             _LOGGER.info("for child %s (%s)...", child._id, child._name)
             child._operating_mode = "FollowSchedule"
@@ -323,86 +326,85 @@ class evoController(ClimateDevice):
                     break
 
 
+# SERVICE_SET_TEMPERATURE = 'set_temperature'
+# SERVICE_SET_AWAY_MODE = 'set_away_mode'
+# SERVICE_SET_OPERATION_MODE = 'set_operation_mode'
 
 class evoZone(ClimateDevice):
     """Representation of a Honeywell evohome zone (thermostat)."""
 
     def __init__(self, client, zone):
         """Initialize the zone."""
-        _LOGGER.info("Creating zone  (__init__): id %s, name: %s", zone['zoneId'], zone['name'])
+        _LOGGER.info("Creating zone (__init__): id %s, name: %s", zone['zoneId'], zone['name'])
 
         self.client = client
         self._id = zone['zoneId']
         self._name = zone['name']
 
-        self._supported_features = (SUPPORT_TARGET_TEMPERATURE | SUPPORT_OPERATION_MODE)
-# do it explicitly to have a 'nice' order 
+## Zones have no Away mode, nor can they be Off
+#       self._supported_features = (SUPPORT_TARGET_TEMPERATURE | SUPPORT_OPERATION_MODE)
 #       self._operation_list = zone['heatSetpointCapabilities']['allowedSetpointModes']
-        self._operation_list = [ "FollowSchedule", "TemporaryOverride", "PermanentOverride"]
-
         self._operating_mode = None
 
+## usu.: 5-35C, but zones can be configured to be inside these values
         self._min_temp = zone['heatSetpointCapabilities']['minHeatSetpoint']
         self._max_temp = zone['heatSetpointCapabilities']['maxHeatSetpoint']
-        self._temperature_unit = TEMP_CELSIUS
 
         self._current_temperature = None
         self._target_temperature = None
 
-#       self._master = master
-#       self._is_dhw = False
-#       self._away_temp = 10
-#       self._away = False
-
-
-    @property
-    def icon(self):
-        """Return the icon to use in the frontend UI, if any."""
-        return "mdi:radiator"  ## is usually: mdi:nest-thermostat
 
     @property
     def name(self):
         """Get the name of the zone."""
-        _LOGGER.info("Just started: name(%s)", self._name)
+        _LOGGER.debug("Just started: name(%s)", self._name)
         return self._name
+
+    @property
+    def icon(self):
+        """Return the icon to use in the frontend UI for the zone."""
+        return "mdi:radiator"  ## default is: mdi:nest-thermostat
 
     @property
     def supported_features(self):
         """Get the list of supported features of the zone."""
-        _LOGGER.info("Just started: supported_features(%s)", self._name)
-#       supported = (SUPPORT_TARGET_TEMPERATURE)
-#       if hasattr(self.client, ATTR_SYSTEM_MODE):
-#           supported |= SUPPORT_OPERATION_MODE
-        return self._supported_features
+        _LOGGER.debug("Just started: supported_features(%s)", self._name)
+        return SUPPORT_TARGET_TEMPERATURE | SUPPORT_OPERATION_MODE  ## zones do not support Away (or Off) mode
+
+    @property
+    def operation_list(self):
+        """Get the list of available operations for the zone."""
+        _LOGGER.debug("Just started: operation_list(%s)", self._name)
+        return [ "FollowSchedule", "TemporaryOverride", "PermanentOverride" ]  ## explicitly set for a 'nice' order
 
     @property
     def temperature_unit(self):
-        """Get the unit of measurement of the zone."""
+        """Get the unit of measurement of the current/target temperatures of the zone."""
         _LOGGER.debug("Just started: temperature_unit(%s)", self._name)
-        return self._temperature_unit
+        return TEMP_CELSIUS
 
     @property
     def precision(self):
-        """Get the precision of the zone."""
+        """Get the precision of the current temperature of the zone."""
+        return PRECISION_HALVES
+        
+    @property
+    def target_temperature_step(self):
+        """Return the supported step of target temperature (setpoint) of the zone."""
         return PRECISION_HALVES
 
     @property
-    def current_temperature(self):
-        """Get the current temperature of the zone."""
-        _LOGGER.info("Just started: current_temperature(%s)", self._name)
-        return self._current_temperature
-
-    def set_temperature(self, **kwargs):
-        """Set a target temperature (setpoint) for the zone."""
-        _LOGGER.info("Just started: set_temperature(%s)", self._name)
-
-        temperature = kwargs.get(ATTR_TEMPERATURE)
-        if temperature is None:
-            return
-        zone = self.client.locations[0]._gateways[0]._control_systems[0].zones[self._name]
-        zone.set_temperature(temperature)
-        self._operating_mode = "PermanentOverride"
-
+    def min_temp(self):
+        """Return the minimum target temperature (setpoint) of the zone."""
+#       return convert_temperature(7, TEMP_CELSIUS, self.temperature_unit)
+        return self._min_temp
+        
+    @property
+    def max_temp(self):
+        """Return the maximum target temperature (setpoint) of the zone."""
+#       return convert_temperature(35, TEMP_CELSIUS, self.temperature_unit)
+        return self._max_temp
+        
     @property
     def target_temperature(self):
         """Get the current target temperature (setpoint) of the zone."""
@@ -412,80 +414,76 @@ class evoZone(ClimateDevice):
         return self._target_temperature
 
     @property
+    def current_temperature(self):
+        """Get the current temperature of the zone."""
+        _LOGGER.info("Just started: current_temperature(%s)", self._name)
+        return self._current_temperature
+        
+        
+    def set_temperature(self, **kwargs):
+        """Set a target temperature (setpoint) for the zone."""
+        _LOGGER.info("Just started: set_temperature({0}, {1})".format(self._name, kwargs))
+#       for name, value in kwargs.items():
+#          _LOGGER.info('{0} = {1}'.format(name, value))
+
+        temperature = kwargs.get(ATTR_TEMPERATURE)
+        if temperature is None:
+            return        
+        if temperature > self._max_temp:
+            return
+        if temperature < self._min_temp:
+            return
+            
+        _LOGGER.info("ZX Calling API: zone.set_temperature({0})".format(temperature))
+        zone = self.client.locations[0]._gateways[0]._control_systems[0].zones[self._name]
+        zone.set_temperature(temperature)
+        
+        self._operating_mode = "PermanentOverride"
+        self._target_temperature = temperature
+
+        
+    @property
     def current_operation(self: ClimateDevice) -> str:
         """Get the current operating mode of the zone."""
         _LOGGER.info("Just started: current_operation(%s)", self._name)
 #       return getattr(self.client, ATTR_SYSTEM_MODE, None)
         return self._operating_mode
 
-    @property
-    def operation_list(self):
-        """Get the list of available operations fro the zone."""
-        _LOGGER.info("Just started: operation_list(%s)", self._name)
-
-#       op_list = []
-#       for mode in EVOHOME_STATE_MAP:
-#           op_list.append(EVOHOME_STATE_MAP.get(mode))
-
-#       return op_list
-        return self._operation_list
-
 
     def set_operation_mode(self: ClimateDevice, operation: str, setpoint=None, until=None) -> None:
-        """Set the operating mode of the zone."""
+        """Set the operating mode for the zone."""
         _LOGGER.info("for zone = %s: set_operation_mode(%s, %s, %s)", self._name, operation, setpoint, until)
 
 #       zone = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id['3432521'])
         zone = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id[self._id]
 
-        _LOGGER.info("for zone = %s (self)", self)
-        _LOGGER.info("for zone = %s (zone)", zone)
+        _LOGGER.info("for zone = {0} (self), {1} (zone)".format(self, zone))
 
         if operation == 'FollowSchedule':
+            _LOGGER.info("ZX Calling API: zone.cancel_temp_override()")
             zone.cancel_temp_override(zone)
 
         else:
-            setpoint = self._target_temperature
+            if setpoint == None:
+                setpoint = self._target_temperature
 
-            if operation == 'TemporaryOverride':
-                until = datetime.now() + timedelta(1/24)
-                zone.set_temperature(setpoint, until)
+            if operation == 'PermanentOverride':
+                _LOGGER.info("ZX Calling API: zone.set_temperature({0})".format(temperature))
+                zone.set_temperature(setpoint)  ## override target temp indefinitely
+                
+            else:
+                if until == None:
+#                   UTC_OFFSET_TIMEDELTA = datetime.now() - datetime.utcnow()
+                    until = datetime.utcnow() + timedelta(1/24) ## use .utcnow() or .now() ??
+                
+                if operation == 'TemporaryOverride':
+                    _LOGGER.info("ZX Calling API: zone.set_temperature({0}, {1})".format(temperature, until))
+                    zone.set_temperature(setpoint, until)  ## override target temp (for a hour)
 
-            elif operation == 'PermanentOverride':
-                zone.set_temperature(setpoint)
-
-        _LOGGER.info("for zone, name = %s (self._name)", self._name)
-#       _LOGGER.info("for zone, name = %s (zone._name)", zone._name)
 
         self._operating_mode = operation
+        self._target_temperature = setpoint
 
-#       sleep(10)
-#       self.client.xx[0].update()
-
-
-
-
-#   @property
-#   def is_away_mode_on(self):
-#       """Return true if Away mode is on."""
-#       _LOGGER.info("Just started: is_away_mode_on(%s)", self._name)
-#       return self._away
-
-#   def turn_away_mode_on(self):
-#       """Turn away on.
-#       Honeywell does have a proprietary away mode, but it doesn't really work
-#       the way it should. For example: If you set a temperature manually
-#       it doesn't get overwritten when away mode is switched on.
-#       """
-#       _LOGGER.info("Just started: turn_away_mode_on(%s)", self._name)
-#       self._away = True
-#       self.client.set_status_away() # Heating and hot water off
-
-#   def turn_away_mode_off(self):
-#       """Turn away off."""
-#       _LOGGER.info("Just started: turn_away_mode_off(%s)", self._name)
-#       self._away = False
-#       self.client.set_status_normal()
 
     def update(self):
         """Get the latest state (temperature, setpoint, mode) of the zone."""
