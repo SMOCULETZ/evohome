@@ -40,8 +40,11 @@ from homeassistant.const import (
     PRECISION_HALVES
     )
 
+## https://www.home-assistant.io/developers/component_deps_and_reqs/
+#  https://github.com/home-assistant/home-assistant.github.io/pull/5199
 REQUIREMENTS = ['evohomeclient==0.2.5']
 
+## https://www.home-assistant.io/components/logger/
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
@@ -73,22 +76,26 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     try:
 # Open a session to Honeywell's servers
         ec_api = EvohomeClient(username, password)
+        _LOGGER.debug("ZX Connected OK by logging into the Honeywell web API.")
 
     except socket.error:
         _LOGGER.error("Failed to connect (socket.error) whilst logging into the Honeywell web API.")
         return False
 
-    _LOGGER.info("Connected OK by logging into the Honeywell web API.")
 
+# Although Installations, Gateways, ControlSystems are 1:M, & 1:M, evohome-client assumes 1:1:1??
+    _LOGGER.info("ZZ Found evohome controller: {0}".format(ec_api.system_id))
+    _LOGGER.debug("ZZ  - ec_api.installation_info[0]: {0}".format(ec_api.installation_info[0]))
 
-# Determine the system configuration- ec_api.full_installation()
-    ec_loc = ec_api.full_installation()  ## using: ec_api.installation() causes problems
+# Determine the system configuration, this is much better than ec_api.full_installation()
+    ec_loc = ec_api.installation_info[0] ## only 1 location for now...
 
-# Although Installations, Gateways, ControllSystems are 1:M, & 1:M, we assume 1:1:1
     location = ec_loc['locationInfo']
     controller = ec_loc['gateways'][0]['temperatureControlSystems'][0]
 
+# Use Location ID, or System ID as ID??? evohome-client uses System ID
     _LOGGER.info("Found Controller: id: %s, name: %s, type: %s", location['locationId'], location['name'], controller['modelType'], )
+
 
 # Collect each (child) zone as a (climate component) device
     evo_devices = []
@@ -105,8 +112,6 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 # Create them all in one batch - do I need to use: itertools.chain(a, b)
 ## what does the 'true' do: add_devices(evo_devices, True)? initial update(), it seems it takes too long?
     add_devices([ parent ] + evo_devices, False)  ## initial update: doesn't work here
-#   add_devices(evo_devices, True)
-#   add_devices([ parent] )
 
 #   parent.update()  ## initial update: doesn't work here
 
@@ -131,7 +136,7 @@ class evoController(ClimateDevice):
         self._operating_mode = None
 
 # apparently, HA requires a temp unit for all climate devices (even those without a temp)
-        self._temperature_unit = TEMP_CELSIUS
+#       self._temperature_unit = TEMP_CELSIUS
 
 #       self._master = master
 #       self._is_dhw = False
@@ -168,7 +173,7 @@ class evoController(ClimateDevice):
 # see: https://github.com/home-assistant/home-assistant/blob/dev/homeassistant/helpers/entity.py
         _LOGGER.debug("Just started: temperature_unit(controller)")
 #       return None  ## Causes exception- ValueError: None is not a recognized temperature unit.
-        return self._temperature_unit
+        return TEMP_CELSIUS
 
     @property
     def operation_list(self):
@@ -199,7 +204,7 @@ class evoController(ClimateDevice):
 ### Controller: operations vs (operating) modes...
 
 # "AutoWithReset" _should_ lead to "Auto" mode (but doesn't), after resetting all the zones to "FollowSchedule"
-        if operation == "AutoWithReset":a private function in the client API (it is not exposed)
+        if operation == "AutoWithReset":  ## a private function in the client API (it is not exposed)
         ## here, we call 
           OPERATING_MODE_AUTOWITHRESET = 5
           self.client.locations[0]._gateways[0]._control_systems[0]._set_status(OPERATING_MODE_AUTOWITHRESET)
