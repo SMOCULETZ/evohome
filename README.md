@@ -14,12 +14,12 @@ climate:
   - platform: evohome
     username: !secret_evohome_username
     password: !secret_evohome_password
-    scan_interval: 300
+    scan_interval: 300  # this is the recommended minimum
 ```
 
 ## Improvements over the existing Honeywell component
 
-1. Uses v2 of the (EU) API (minimal noticeable benefit as yet)
-2. Exposes the controller as a separate entity (from the zones)
+1. Uses v2 of the (EU) API (minimal noticeable benefit as yet).
+2. Exposes the controller as a separate entity (from the zones), and...
 3. Correctly assigns operating modes to the controller (e.g. Eco/Away modes) and it's zones (e.g. FollowSchedule/PermanentOverride modes)
-4. loads all entity in a single `add_devices()` call
+4. Greater efficiency: loads all entity in a single `add_devices()` call, and fewer client api calls at initialisation.

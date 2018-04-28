@@ -96,12 +96,12 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     controller = ec_loc['gateways'][0]['temperatureControlSystems'][0]
 
 # Use Location ID, or System ID as ID??? evohome-client uses System ID
-    _LOGGER.debug("Found Controller: id: %s, name: %s, type: %s", location['locationId'], location['name'], controller['modelType'], )
+    _LOGGER.info("Found Controller: id: %s, type: %s, name: %s", location['locationId'], controller['modelType'], location['name'])
 
 # Collect each (child) zone as a (climate component) device
     evo_devices = []
     for zone in controller['zones']:
-        _LOGGER.debug("Found Zone: id: %s, name: %s, type: %s", zone['zoneId'], zone['name'], zone['zoneType'])
+        _LOGGER.info("Found Zone: id: %s, type: %s, name: %s", zone['zoneId'], zone['zoneType'], zone['name'])
         if zone['zoneType'] == "RadiatorZone":
             child = evoZone(ec_api, zone)
             evo_devices.append(child)  ## add this zone to the list of devices
@@ -126,7 +126,7 @@ class evoController(ClimateDevice):
 #   def __init__(self, client, controlSystem, locationInfo, childZones):
     def __init__(self, client, locationInfo, childZones):
         """Initialize the zone."""
-        _LOGGER.info("Creating Controller (__init__): id: %s, name: %s", locationInfo['locationId'], locationInfo['name'])
+        _LOGGER.debug("Creating Controller (__init__): id: %s, name: %s", locationInfo['locationId'], locationInfo['name'])
 
         self.client = client
         self._id = locationInfo['locationId']
@@ -157,7 +157,7 @@ class evoController(ClimateDevice):
     @property
     def supported_features(self):
         """Get the list of supported features of the controller."""
-        _LOGGER.info("Just started: supported_features(controller)")
+        _LOGGER.debug("Just started: supported_features(controller)")
 ## It will likely be the case we need to support Away/Eco/Off modes in the HA fashion 
 ## even though these modes are subtly different - this will allow tight integration
 ## with the HA landscape / other HA components, e.g. Alexa/Google integration
@@ -169,7 +169,7 @@ class evoController(ClimateDevice):
     @property
     def name(self):
         """Get the name of the controller."""
-        _LOGGER.info("Just started: name(zone)")
+        _LOGGER.debug("Just started: name(zone)")
         return self._name
 
     @property
@@ -185,7 +185,7 @@ class evoController(ClimateDevice):
     @property
     def operation_list(self):
         """Get the list of available operations fro the controller."""
-        _LOGGER.info("Just started: operation_list(controller)")
+        _LOGGER.debug("Just started: operation_list(controller)")
 
 #       op_list = []
 #       for mode in EVOHOME_STATE_MAP:
@@ -197,7 +197,7 @@ class evoController(ClimateDevice):
     @property
     def current_operation(self: ClimateDevice) -> str:
         """Get the current operating mode of the controller."""
-        _LOGGER.info("Just started: current_operation(controller)")
+        _LOGGER.debug("Just started: current_operation(controller)")
 #       return getattr(self.client, ATTR_SYSTEM_MODE, None)
         return self._operating_mode
 
@@ -219,7 +219,7 @@ class evoController(ClimateDevice):
 
 ## I'm not sure if this works either...          
           for child in self._childZones:
-            _LOGGER.info("for child %s (%s)...", child._id, child._name)
+            _LOGGER.debug("for child %s (%s)...", child._id, child._name)
             child._operating_mode = "FollowSchedule"
             child.update()
           
@@ -239,7 +239,7 @@ class evoController(ClimateDevice):
 
 # before calling func(), should check OAuth token still viable, but how?
           func = functions[operation]
-          _LOGGER.info("set_operation_mode(), func = %s), func")
+          _LOGGER.debug("set_operation_mode(), func = %s), func")
           func()
 
 
@@ -252,7 +252,7 @@ class evoController(ClimateDevice):
     @property
     def is_away_mode_on(self):
         """Return true if Away mode is on."""
-        _LOGGER.info("Just started: is_away_mode_on(controller)")
+        _LOGGER.debug("Just started: is_away_mode_on(controller)")
         return self._away
 
     def turn_away_mode_on(self):
@@ -261,7 +261,7 @@ class evoController(ClimateDevice):
         the way it should. For example: If you set a temperature manually
         it doesn't get overwritten when away mode is switched on.
         """
-        _LOGGER.info("Just started: turn_away_mode_on(controller)")
+        _LOGGER.debug("Just started: turn_away_mode_on(controller)")
         self._away = True
         self.client.set_status_away() # Heating and hot water off
 
@@ -270,7 +270,7 @@ class evoController(ClimateDevice):
 
     def turn_away_mode_off(self):
         """Turn away off for the location."""
-        _LOGGER.info("Just started: turn_away_mode_off(controller)")
+        _LOGGER.debug("Just started: turn_away_mode_off(controller)")
         self._away = False
         self.client.set_status_normal()
 
@@ -280,7 +280,7 @@ class evoController(ClimateDevice):
     def update(self):
         """Get the latest state (operating mode) of the controller and
         update the state (temp, setpoint) of all children zones."""
-        _LOGGER.info("Just started: update(controller)")
+        _LOGGER.debug("Just started: update(controller)")
 
 #       if data['thermostat'] == 'DOMESTIC_HOT_WATER':
 #           self._name = 'Hot Water'
@@ -290,7 +290,7 @@ class evoController(ClimateDevice):
 #           self._is_dhw = False
 
 #           status=self.client.locations[0].status()
-#           _LOGGER.info(status)
+#           _LOGGER.debug(status)
 
 #           tcs=status['gateways'][0]['temperatureControlSystems'][0]
 #           currentmode=tcs['systemModeStatus']['mode']
@@ -306,7 +306,7 @@ class evoController(ClimateDevice):
 
         except TypeError:
         # this is the error - does this code skip a update cycle?
-            _LOGGER.error("Update (of location) failed: TypeError (has OAuth token timed out?)")
+            _LOGGER.error("Update (of location) failed: TypeError (usually because OAuth token has timed out?)")
 
 ### http://www.automatedhome.co.uk/vbulletin/showthread.php?3863-Decoded-EvoHome-API-access-to-control-remotely&p=20192&viewfull=1#post20192
 # curl -s -v https://rs.alarmnet.com/TotalConnectComfort/Auth/OAuth/Token
@@ -318,11 +318,11 @@ class evoController(ClimateDevice):
             return
 
         ec_tcs = ec_tmp['gateways'][0]['temperatureControlSystems'][0]
-#       _LOGGER.info(ec_tcs)
+#       _LOGGER.debug(ec_tcs)
 
 #       self.client.system_mode = ec_tcs['systemModeStatus']['mode']
         self._operating_mode = ec_tcs['systemModeStatus']['mode']
-        _LOGGER.info("Current system mode (of location/controller) is: %s", self._operating_mode)
+        _LOGGER.debug("Current system mode (of location/controller) is: %s", self._operating_mode)
 
         for child in self._childZones:
             _LOGGER.debug("for child %s (%s)...", child._id, child._name)
@@ -333,7 +333,7 @@ class evoController(ClimateDevice):
                     child._target_temperature = zone['heatSetpointStatus']['targetTemperature']
                     child._operating_mode = zone['heatSetpointStatus']['setpointMode']
 
-                    _LOGGER.info("Zone: %s, Temp: %s, Setpoint %s, Mode: %s", child._name, child._current_temperature, child._target_temperature, child._operating_mode)
+                    _LOGGER.debug("Zone: %s, Temp: %s, Setpoint %s, Mode: %s", child._name, child._current_temperature, child._target_temperature, child._operating_mode)
 #                   child.update()
                     break
 
@@ -347,7 +347,7 @@ class evoZone(ClimateDevice):
 
     def __init__(self, client, zone):
         """Initialize the zone."""
-        _LOGGER.info("Creating zone (__init__): id %s, name: %s", zone['zoneId'], zone['name'])
+        _LOGGER.debug("Creating zone (__init__): id %s, name: %s", zone['zoneId'], zone['name'])
 
         self.client = client
         self._id = zone['zoneId']
@@ -420,7 +420,7 @@ class evoZone(ClimateDevice):
     @property
     def target_temperature(self):
         """Get the current target temperature (setpoint) of the zone."""
-        _LOGGER.info("Just started: target_temperature(%s)", self._name)
+        _LOGGER.debug("Just started: target_temperature(%s)", self._name)
 #       if self._is_dhw:
 #           return None
         return self._target_temperature
@@ -428,15 +428,15 @@ class evoZone(ClimateDevice):
     @property
     def current_temperature(self):
         """Get the current temperature of the zone."""
-        _LOGGER.info("Just started: current_temperature(%s)", self._name)
+        _LOGGER.debug("Just started: current_temperature(%s)", self._name)
         return self._current_temperature
         
         
     def set_temperature(self, **kwargs):
         """Set a target temperature (setpoint) for the zone."""
-        _LOGGER.info("Just started: set_temperature({0}, {1})".format(self._name, kwargs))
+        _LOGGER.debug("Just started: set_temperature({0}, {1})".format(self._name, kwargs))
 #       for name, value in kwargs.items():
-#          _LOGGER.info('{0} = {1}'.format(name, value))
+#          _LOGGER.debug('{0} = {1}'.format(name, value))
 
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
@@ -446,7 +446,7 @@ class evoZone(ClimateDevice):
         if temperature < self._min_temp:
             return
             
-        _LOGGER.info("ZX Calling API: zone.set_temperature({0})".format(temperature))
+        _LOGGER.debug("ZX Calling API: zone.set_temperature({0})".format(temperature))
         zone = self.client.locations[0]._gateways[0]._control_systems[0].zones[self._name]
         zone.set_temperature(temperature)
         
@@ -457,7 +457,7 @@ class evoZone(ClimateDevice):
     @property
     def current_operation(self: ClimateDevice) -> str:
         """Get the current operating mode of the zone."""
-        _LOGGER.info("Just started: current_operation(%s)", self._name)
+        _LOGGER.debug("Just started: current_operation(%s)", self._name)
 #       return getattr(self.client, ATTR_SYSTEM_MODE, None)
         return self._operating_mode
 
@@ -469,10 +469,10 @@ class evoZone(ClimateDevice):
 #       zone = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id['3432521'])
         zone = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id[self._id]
 
-        _LOGGER.info("for zone = {0} (self), {1} (zone)".format(self, zone))
+        _LOGGER.debug("for zone = {0} (self), {1} (zone)".format(self, zone))
 
         if operation == 'FollowSchedule':
-            _LOGGER.info("ZX Calling API: zone.cancel_temp_override()")
+            _LOGGER.debug("ZX Calling API: zone.cancel_temp_override()")
             zone.cancel_temp_override(zone)
 
         else:
@@ -480,7 +480,7 @@ class evoZone(ClimateDevice):
                 setpoint = self._target_temperature
 
             if operation == 'PermanentOverride':
-                _LOGGER.info("ZX Calling API: zone.set_temperature({0})".format(temperature))
+                _LOGGER.debug("ZX Calling API: zone.set_temperature({0})".format(temperature))
                 zone.set_temperature(setpoint)  ## override target temp indefinitely
                 
             else:
@@ -489,7 +489,7 @@ class evoZone(ClimateDevice):
                     until = datetime.utcnow() + timedelta(1/24) ## use .utcnow() or .now() ??
                 
                 if operation == 'TemporaryOverride':
-                    _LOGGER.info("ZX Calling API: zone.set_temperature({0}, {1})".format(temperature, until))
+                    _LOGGER.debug("ZX Calling API: zone.set_temperature({0}, {1})".format(temperature, until))
                     zone.set_temperature(setpoint, until)  ## override target temp (for a hour)
 
 
@@ -499,7 +499,7 @@ class evoZone(ClimateDevice):
 
     def update(self):
         """Get the latest state (temperature, setpoint, mode) of the zone."""
-        _LOGGER.info("Just started: update(%s)", self._name)
+        _LOGGER.debug("Just started: update(%s)", self._name)
         return
 
 # No updates here - the controller updates all it zones
