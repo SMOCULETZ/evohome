@@ -64,7 +64,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
     _LOGGER.info("Started: setup_platform(evohome), unit: %s", TEMP_CELSIUS)
 
-### Need to add code to exclude US-based systems
+### Need to add code to exclude US-based systems...
     
     username = config.get(CONF_USERNAME)
     password = config.get(CONF_PASSWORD)
@@ -75,8 +75,8 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
     try:
 # Open a session to Honeywell's servers
-        ec_api = EvohomeClient(username, password)
-        _LOGGER.debug("ZX Connected OK by logging into the Honeywell web API.")
+        ec_api = EvohomeClient(username, password, debug=True)
+        _LOGGER.debug("Connected OK by logging into the Honeywell web API.")
 
     except socket.error:
         _LOGGER.error("Failed to connect (socket.error) whilst logging into the Honeywell web API.")
@@ -84,30 +84,31 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
 
 # Although Installations, Gateways, ControlSystems are 1:M, & 1:M, evohome-client assumes 1:1:1??
-    _LOGGER.info("ZZ Found evohome controller: {0}".format(ec_api.system_id))
-    _LOGGER.debug("ZZ  - ec_api.installation_info[0]: {0}".format(ec_api.installation_info[0]))
+    _LOGGER.debug("Found evohome controller:")
+    _LOGGER.debug(" - ec_api.system_id: {0}".format(ec_api.system_id))
+    _LOGGER.debug(" - ec_api.account_info: {0}".format(ec_api.account_info))
+    _LOGGER.debug(" - ec_api.installation_info[0]: {0}".format(ec_api.installation_info[0]))
 
-# Determine the system configuration, this is much better than ec_api.full_installation()
+# Determine the system configuration, this is more efficient than ec_api.full_installation()
     ec_loc = ec_api.installation_info[0] ## only 1 location for now...
 
     location = ec_loc['locationInfo']
     controller = ec_loc['gateways'][0]['temperatureControlSystems'][0]
 
 # Use Location ID, or System ID as ID??? evohome-client uses System ID
-    _LOGGER.info("Found Controller: id: %s, name: %s, type: %s", location['locationId'], location['name'], controller['modelType'], )
-
+    _LOGGER.debug("Found Controller: id: %s, name: %s, type: %s", location['locationId'], location['name'], controller['modelType'], )
 
 # Collect each (child) zone as a (climate component) device
     evo_devices = []
     for zone in controller['zones']:
-        _LOGGER.info("Found Zone: id: %s, name: %s, type: %s", zone['zoneId'], zone['name'], zone['zoneType'])
+        _LOGGER.debug("Found Zone: id: %s, name: %s, type: %s", zone['zoneId'], zone['name'], zone['zoneType'])
         if zone['zoneType'] == "RadiatorZone":
             child = evoZone(ec_api, zone)
             evo_devices.append(child)  ## add this zone to the list of devices
 
 # Collect the (parent) controller (a merge of location & controller)
-    parent = evoController(ec_api, controller, location, evo_devices)  ## (ec_api, device, identifier, children)
-
+#   parent = evoController(ec_api, controller, location, evo_devices)  ## (ec_api, device, identifier, children[])
+    parent = evoController(ec_api, location, evo_devices)              ## (ec_api, device, children[])
 
 # Create them all in one batch - do I need to use: itertools.chain(a, b)
 ## what does the 'true' do: add_devices(evo_devices, True)? initial update(), it seems it takes too long?
@@ -122,7 +123,8 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 class evoController(ClimateDevice):
     """Representation of a Honeywell evohome zone (thermostat)."""
 
-    def __init__(self, client, controlSystem, locationInfo, childZones):
+#   def __init__(self, client, controlSystem, locationInfo, childZones):
+    def __init__(self, client, locationInfo, childZones):
         """Initialize the zone."""
         _LOGGER.info("Creating Controller (__init__): id: %s, name: %s", locationInfo['locationId'], locationInfo['name'])
 
@@ -144,17 +146,21 @@ class evoController(ClimateDevice):
 #       self._away = False
 
         self.update() ## initial update: does work here
+## what aboute: the_zone.schedule_update_ha_state()       
 
 
-    @property
-    def icon(self):
-        """Return the icon to use in the frontend UI, if any."""
-        return "mdi:nest-thermostat"  ## is usually: mdi:nest-thermostat
+#   @property
+#   def icon(self):
+#       """Return the icon to use in the frontend UI, if any."""
+#       return "mdi:nest-thermostat"  ## is usually: mdi:nest-thermostat
 
     @property
     def supported_features(self):
         """Get the list of supported features of the controller."""
         _LOGGER.info("Just started: supported_features(controller)")
+## It will likely be the case we need to support Away/Eco/Off modes in the HA fashion 
+## even though these modes are subtly different - this will allow tight integration
+## with the HA landscape / other HA components, e.g. Alexa/Google integration
 #       supported = (SUPPORT_TARGET_TEMPERATURE)
 #       if hasattr(self.client, ATTR_SYSTEM_MODE):
 #           supported |= SUPPORT_OPERATION_MODE
@@ -172,7 +178,8 @@ class evoController(ClimateDevice):
 ### This must be implemented despite SUPPORT_FLAGS = SUPPORT_OPERATION_MODE (only)
 # see: https://github.com/home-assistant/home-assistant/blob/dev/homeassistant/helpers/entity.py
         _LOGGER.debug("Just started: temperature_unit(controller)")
-#       return None  ## Causes exception- ValueError: None is not a recognized temperature unit.
+#       raise NotImplementedError()  ## doesn't help
+#       return None                  ## Causes ValueError: None is not a recognized temperature unit.
         return TEMP_CELSIUS
 
     @property
@@ -493,6 +500,7 @@ class evoZone(ClimateDevice):
     def update(self):
         """Get the latest state (temperature, setpoint, mode) of the zone."""
         _LOGGER.info("Just started: update(%s)", self._name)
+        return
 
 # No updates here - the controller updates all it zones
 # - this use API calls, 1 per group of zones, rather than 1 each
