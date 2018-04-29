@@ -26,12 +26,33 @@ import requests
 import voluptuous as vol
 
 import homeassistant.helpers.config_validation as cv
+# from homeassistant.helpers.config_validation import PLATFORM_SCHEMA  # noqa
 
 from homeassistant.components.climate import (
     ClimateDevice, PLATFORM_SCHEMA,
-    ATTR_OPERATION_MODE, ATTR_OPERATION_LIST,
+
+#   SERVICE_SET_OPERATION_MODE = 'set_operation_mode'
+#   SERVICE_SET_TEMPERATURE = 'set_temperature'
+#   SERVICE_SET_AWAY_MODE = 'set_away_mode'
+
     SUPPORT_TARGET_TEMPERATURE,
-    SUPPORT_OPERATION_MODE)
+#   SUPPORT_TARGET_TEMPERATURE_HIGH,
+#   SUPPORT_TARGET_TEMPERATURE_LOW,
+    SUPPORT_OPERATION_MODE,
+#   SUPPORT_AWAY_MODE,
+    
+#   ATTR_CURRENT_TEMPERATURE = 'current_temperature'
+#   ATTR_MAX_TEMP = 'max_temp'
+#   ATTR_MIN_TEMP = 'min_temp'
+#   ATTR_TARGET_TEMP_HIGH = 'target_temp_high'
+#   ATTR_TARGET_TEMP_LOW = 'target_temp_low'
+#   ATTR_TARGET_TEMP_STEP = 'target_temp_step'
+#   ATTR_OPERATION_MODE = 'operation_mode'
+    ATTR_OPERATION_MODE,
+#   ATTR_OPERATION_LIST = 'operation_list'    
+    ATTR_OPERATION_LIST,    
+#   ATTR_AWAY_MODE = 'away_mode'
+    )
 
 from homeassistant.const import (
     CONF_USERNAME, CONF_PASSWORD,
@@ -75,7 +96,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
     try:
 # Open a session to Honeywell's servers
-        ec_api = EvohomeClient(username, password, debug=True)
+        ec_api = EvohomeClient(username, password, debug=False)
         _LOGGER.debug("Connected OK by logging into the Honeywell web API.")
 
     except socket.error:
@@ -102,7 +123,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     evo_devices = []
     for zone in controller['zones']:
         _LOGGER.info("Found Zone: id: %s, type: %s, name: %s", zone['zoneId'], zone['zoneType'], zone['name'])
-        if zone['zoneType'] == "RadiatorZone":
+        if zone['zoneType'] in [ "RadiatorZone", "ZoneValve" ]:
             child = evoZone(ec_api, zone)
             evo_devices.append(child)  ## add this zone to the list of devices
 
@@ -125,7 +146,7 @@ class evoController(ClimateDevice):
 
 #   def __init__(self, client, controlSystem, locationInfo, childZones):
     def __init__(self, client, locationInfo, childZones):
-        """Initialize the zone."""
+        """Initialize the controller."""
         _LOGGER.debug("Creating Controller (__init__): id: %s, name: %s", locationInfo['locationId'], locationInfo['name'])
 
         self.client = client
