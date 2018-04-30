@@ -123,16 +123,16 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     evo_devices = []
     for zone in controller['zones']:
         _LOGGER.info("Found Zone: id: %s, type: %s, name: %s", zone['zoneId'], zone['zoneType'], zone['name'])
-        if zone['zoneType'] in [ "RadiatorZone", "ZoneValve" ]:
-            child = evoZone(ec_api, zone)
-            evo_devices.append(child)  ## add this zone to the list of devices
+#       if zone['zoneType'] in [ "RadiatorZone", "ZoneValves" ]:  # what about DHW - how to exclude?
+        child = evoZone(ec_api, zone)
+        evo_devices.append(child)  # add this zone to the list of devices
 
 # Collect the (parent) controller (a merge of location & controller)
 #   parent = evoController(ec_api, controller, location, evo_devices)  ## (ec_api, device, identifier, children[])
     parent = evoController(ec_api, location, evo_devices)              ## (ec_api, device, children[])
 
 # Create them all in one batch - do I need to use: itertools.chain(a, b)
-## what does the 'true' do: add_devices(evo_devices, True)? initial update(), it seems it takes too long?
+## what does the 'True' do: add_devices(evo_devices, True)? initial update(), it seems it takes too long?
     add_devices([ parent ] + evo_devices, False)  ## initial update: doesn't work here
 
 #   parent.update()  ## initial update: doesn't work here
@@ -166,8 +166,10 @@ class evoController(ClimateDevice):
 #       self._away_temp = 10
 #       self._away = False
 
+## See: https://developers.home-assistant.io/docs/en/creating_platform_code_review.html
+# - it says: Do not call update() in constructor, use add_devices(devices, True) instead.
         self.update() ## initial update: does work here
-## what aboute: the_zone.schedule_update_ha_state()       
+## what about: the_zone.schedule_update_ha_state()       
 
 
 #   @property
@@ -359,9 +361,6 @@ class evoController(ClimateDevice):
                     break
 
 
-# SERVICE_SET_TEMPERATURE = 'set_temperature'
-# SERVICE_SET_AWAY_MODE = 'set_away_mode'
-# SERVICE_SET_OPERATION_MODE = 'set_operation_mode'
 
 class evoZone(ClimateDevice):
     """Representation of a Honeywell evohome zone (thermostat)."""
