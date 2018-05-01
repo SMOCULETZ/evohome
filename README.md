@@ -19,7 +19,8 @@ climate:
 
 ## Improvements over the existing Honeywell component
 
-1. Uses v2 of the (EU) API: minimal noticeable benefit as yet, but (sadly) temp precision is reduced from .01°C to .5°C.
+1. Uses v2 of the (EU) API: minimal noticeable benefit as yet, but (sadly) temp precision is reduced from .1°C to .5°C (but see below).
 2. Exposes the controller as a separate entity (from the zones), and...
 3. Correctly assigns operating modes to the controller (e.g. Eco/Away modes) and it's zones (e.g. FollowSchedule/PermanentOverride modes)
-4. Greater efficiency: loads all entity in a single `add_devices()` call, and fewer api calls to Honeywell during initialisation.
+4. Greater efficiency: loads all entities in a single `add_devices()` call, and fewer api calls to Honeywell during initialisation.
+5. Leverages v1 of the API to increase precision of reported temps to 0.1°C (actually the API reports 0.01, but HA only handles 0.1).  Falls back to v2 temps if unable to get v1 temps. 

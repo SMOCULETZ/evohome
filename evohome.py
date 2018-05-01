@@ -363,7 +363,6 @@ class evoController(ClimateDevice):
 
         try:
             from evohomeclient  import EvohomeClient as EvohomeClientVer1  ## uses v1 of the api
-#           ev_api = EvohomeClientVer1("spotty.blackcat@gmail.com", "ORukU58XnhTc9JZk")
             ev_api = EvohomeClientVer1(self.client.username, self.client.password)
             zones = list(ev_api.temperatures(force_refresh=True)) # use list() to convert from a generator
 
