@@ -58,7 +58,7 @@ from homeassistant.const import (
     CONF_USERNAME, CONF_PASSWORD,
     TEMP_CELSIUS, TEMP_FAHRENHEIT,
     ATTR_TEMPERATURE,
-    PRECISION_HALVES
+    PRECISION_HALVES, PRECISION_TENTHS
     )
 
 ## https://www.home-assistant.io/developers/component_deps_and_reqs/
@@ -122,7 +122,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 # Collect each (child) zone as a (climate component) device
     evo_devices = []
     for zone in controller['zones']:
-        _LOGGER.info("Found Zone: id: %s, type: %s, name: %s", zone['zoneId'], zone['zoneType'], zone['name'])
+        _LOGGER.debug("Found Zone: id: %s, type: %s, name: %s", zone['zoneId'], zone['zoneType'], zone['name'])
 #       if zone['zoneType'] in [ "RadiatorZone", "ZoneValves" ]:  # what about DHW - how to exclude?
         child = evoZone(ec_api, zone)
         evo_devices.append(child)  # add this zone to the list of devices
@@ -348,9 +348,9 @@ class evoController(ClimateDevice):
         _LOGGER.debug("Current system mode (of location/controller) is: %s", self._operating_mode)
 
         for child in self._childZones:
-            _LOGGER.debug("for child %s (%s)...", child._id, child._name)
+            _LOGGER.debug("for child {0} ({1})...".format(child._id, child._name))
             for zone in ec_tcs['zones']:
-                _LOGGER.debug("is it zone %s (%s)?", zone['zoneId'], zone['name'])
+                _LOGGER.debug(" - is it zone {0} ({1})?".format(zone['zoneId'], zone['name']))
                 if zone['zoneId'] == child._id:
                     child._current_temperature = zone['temperatureStatus']['temperature']
                     child._target_temperature = zone['heatSetpointStatus']['targetTemperature']
@@ -361,6 +361,31 @@ class evoController(ClimateDevice):
                     break
 
 
+        try:
+            from evohomeclient  import EvohomeClient as EvohomeClientVer1  ## uses v1 of the api
+#           ev_api = EvohomeClientVer1("spotty.blackcat@gmail.com", "ORukU58XnhTc9JZk")
+            ev_api = EvohomeClientVer1(self.client.username, self.client.password)
+            zones = list(ev_api.temperatures(force_refresh=True)) # use list() to convert from a generator
+
+            for child in self._childZones:
+                _LOGGER.debug("for child {0} ({1})...".format(child._id, child._name))
+                for zone in zones:
+                    _LOGGER.debug(" - is it zone {0} ({1})?".format(zone['id'], zone['name']))
+                    if int(zone['id']) == int(child._id):
+                        _LOGGER.debug(" - for child {0}, zone {1}, temp {2}...".format(child._id, zone['id'], zone['temp']))
+                        child._current_temperature = zone['temp']
+                        break
+
+        except:
+            _LOGGER.error("Failed to connect to the Honeywell web v1 API (for higher precision temps).")
+            raise
+
+        for child in self._childZones:
+            _LOGGER.info("update(controller) - for child {0} ({1}), temp = {2}.".format(child._id, child._name, child._current_temperature))
+
+
+            
+            
 
 class evoZone(ClimateDevice):
     """Representation of a Honeywell evohome zone (thermostat)."""
@@ -418,7 +443,9 @@ class evoZone(ClimateDevice):
     @property
     def precision(self):
         """Get the precision of the current temperature of the zone."""
-        return PRECISION_HALVES
+#       return PRECISION_HALVES  # if using v2 of api
+#       return 0.01              # if using v1 of api, but...
+        return PRECISION_TENTHS  # HA doesn't support PRECISION_HUNDRETHS
         
     @property
     def target_temperature_step(self):
@@ -448,7 +475,7 @@ class evoZone(ClimateDevice):
     @property
     def current_temperature(self):
         """Get the current temperature of the zone."""
-        _LOGGER.debug("Just started: current_temperature(%s)", self._name)
+        _LOGGER.debug("Just started: current_temperature({0}), temp = {1}".format(self._name, self._current_temperature))
         return self._current_temperature
         
         

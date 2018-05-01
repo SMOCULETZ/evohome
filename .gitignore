@@ -1,0 +1,10 @@
+*
+!*.yaml
+!*.conf
+!scenes
+!.gitignore
+secrets.yaml
+!known_devices.yaml
+zwcfg_*.xml
+LICENSE
+!README.md
