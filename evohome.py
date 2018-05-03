@@ -106,9 +106,9 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
 # Although Installations, Gateways, ControlSystems are 1:M, & 1:M, evohome-client assumes 1:1:1??
     _LOGGER.debug("Found evohome controller:")
-    _LOGGER.debug(" - ec_api.system_id: {0}".format(ec_api.system_id))
-    _LOGGER.debug(" - ec_api.account_info: {0}".format(ec_api.account_info))
-    _LOGGER.debug(" - ec_api.installation_info[0]: {0}".format(ec_api.installation_info[0]))
+    _LOGGER.debug(" - ec_api.system_id: %s", ec_api.system_id)
+    _LOGGER.debug(" - ec_api.account_info: %s", ec_api.account_info)
+    _LOGGER.debug(" - ec_api.installation_info[0]: %s", ec_api.installation_info[0])
 
 # Determine the system configuration, this is more efficient than ec_api.full_installation()
     ec_loc = ec_api.installation_info[0] ## only 1 location for now...
@@ -348,9 +348,9 @@ class evoController(ClimateDevice):
         _LOGGER.debug("Current system mode (of location/controller) is: %s", self._operating_mode)
 
         for child in self._childZones:
-            _LOGGER.debug("for child {0} ({1})...".format(child._id, child._name))
+            _LOGGER.debug("for child %s (%s)...", child._id, child._name)
             for zone in ec_tcs['zones']:
-                _LOGGER.debug(" - is it zone {0} ({1})?".format(zone['zoneId'], zone['name']))
+                _LOGGER.debug(" - is it zone %s (%s)?", zone['zoneId'], zone['name'])
                 if zone['zoneId'] == child._id:
                     child._current_temperature = zone['temperatureStatus']['temperature']
                     child._target_temperature = zone['heatSetpointStatus']['targetTemperature']
@@ -367,20 +367,24 @@ class evoController(ClimateDevice):
             zones = list(ev_api.temperatures(force_refresh=True)) # use list() to convert from a generator
 
             for child in self._childZones:
-                _LOGGER.debug("for child {0} ({1})...".format(child._id, child._name))
+                _LOGGER.debug("for child %s (%s)...", child._id, child._name)
                 for zone in zones:
-                    _LOGGER.debug(" - is it zone {0} ({1})?".format(zone['id'], zone['name']))
+                    _LOGGER.debug(" - is it zone %s (%s)?", zone['id'], zone['name'])
                     if int(zone['id']) == int(child._id):
-                        _LOGGER.debug(" - for child {0}, zone {1}, temp {2}...".format(child._id, zone['id'], zone['temp']))
+                        _LOGGER.debug(" - for child: %s, zone: %s, temp: %s...", child._id, zone['id'], zone['temp'])
                         child._current_temperature = zone['temp']
                         break
 
         except:
             _LOGGER.error("Failed to connect to the Honeywell web v1 API (for higher precision temps).")
             raise
-
-        for child in self._childZones:
-            _LOGGER.info("update(controller) - for child {0} ({1}), temp = {2}.".format(child._id, child._name, child._current_temperature))
+            
+        finally:
+            ev_api = None
+            
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            for child in self._childZones:
+                _LOGGER.debug("update(controller) - for child %s (%s), temp = %s.", child._id, child._name, child._current_temperature)
 
 
             
@@ -474,13 +478,13 @@ class evoZone(ClimateDevice):
     @property
     def current_temperature(self):
         """Get the current temperature of the zone."""
-        _LOGGER.debug("Just started: current_temperature({0}), temp = {1}".format(self._name, self._current_temperature))
+        _LOGGER.debug("Just started: current_temperature(%s), temp = %s", self._name, self._current_temperature)
         return self._current_temperature
         
         
     def set_temperature(self, **kwargs):
         """Set a target temperature (setpoint) for the zone."""
-        _LOGGER.debug("Just started: set_temperature({0}, {1})".format(self._name, kwargs))
+        _LOGGER.debug("Just started: set_temperature(%s, %s)", self._name, kwargs)
 #       for name, value in kwargs.items():
 #          _LOGGER.debug('{0} = {1}'.format(name, value))
 
@@ -492,7 +496,7 @@ class evoZone(ClimateDevice):
         if temperature < self._min_temp:
             return
             
-        _LOGGER.debug("ZX Calling API: zone.set_temperature({0})".format(temperature))
+        _LOGGER.debug("ZX Calling API: zone.set_temperature(%s)", temperature)
         zone = self.client.locations[0]._gateways[0]._control_systems[0].zones[self._name]
         zone.set_temperature(temperature)
         
@@ -535,7 +539,7 @@ class evoZone(ClimateDevice):
                     until = datetime.utcnow() + timedelta(1/24) ## use .utcnow() or .now() ??
                 
                 if operation == 'TemporaryOverride':
-                    _LOGGER.debug("ZX Calling API: zone.set_temperature({0}, {1})".format(temperature, until))
+                    _LOGGER.debug("ZX Calling API: zone.set_temperature(%s, %s)", temperature, until)
                     zone.set_temperature(setpoint, until)  ## override target temp (for a hour)
 
 
