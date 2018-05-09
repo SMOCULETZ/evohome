@@ -27,5 +27,7 @@ climate:
 
 ## Problems with current implemenation
 
-1. The controller, which doesn't have a `current_temperature` is implemented as a climate entity, and HA expects all climate entities to report a temperature.
-2. The underlying api (evohomeclient2) has some issues (e.g. no provision to refresh OAuth tokens) that requires work-arounds.
+1. The controller, which doesn't have a `current_temperature` is implemented as a climate entity, and HA expects all climate entities to report a temperature.  So you will see and empty temperature graph for this entity.  A fix will require: a) changing HA (to accept a climate entity without a temperature (like a fan entity), or; b) changing the controller to a different entity class (but this may break some of the away mode integrations planned for the future).
+2. Away mode (as understood by HA), is not implemented as yet.
+3. The underlying api (evohomeclient2) has some issues (e.g. no provision to refresh OAuth tokens) that requires work-arounds.
+4. The code is currently messy, and architecturally unsatisfying (e.g. teh controller updates the zones private attributes directly).
