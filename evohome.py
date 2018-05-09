@@ -10,17 +10,21 @@ climate:
     password: !secret_evohome_password
     scan_interval: 300
 """
-### Based upon: https://gist.github.com/namadori/3f3a15bbbae4f8783394993c148cb555 (with thanks)
+# Based upon: https://gist.github.com/namadori/3f3a15bbbae4f8783394993c148cb555 (with thanks)
 
-### This implements a climate component for the evohome controller only. In future,
+# This implements a climate component for the evohome controller only. In future,
 #   it may be better for a 'group' of 1 state object, and 1+ climate components?
 #  - see: https://community.home-assistant.io/t/components-creating-and-updating-groups/11566
+
+# regarding: https://developers.home-assistant.io/docs/en/development_index.html
+#  - checked with: flake8 --ignore=E303,E241 --max-line-length=150 evohome.py
+
 
 
 import logging
 import socket
-from datetime import datetime, timedelta
-from time import sleep
+from datetime import datetime, timedelta 
+from time import sleep, strftime
 
 import requests
 import voluptuous as vol
@@ -61,6 +65,8 @@ from homeassistant.const import (
     PRECISION_HALVES, PRECISION_TENTHS
     )
 
+# CONF_HIGH_PRECISION='high_precision'
+    
 ## https://www.home-assistant.io/developers/component_deps_and_reqs/
 #  https://github.com/home-assistant/home-assistant.github.io/pull/5199
 REQUIREMENTS = ['evohomeclient==0.2.5']
@@ -70,7 +76,9 @@ _LOGGER = logging.getLogger(__name__)
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_USERNAME): cv.string,
-    vol.Required(CONF_PASSWORD): cv.string
+    vol.Required(CONF_PASSWORD): cv.string,
+#   vol.Optional(CONF_HIGH_PRECISION, default=False): cv.boolean,
+    
 #    vol.Optional(CONF_AWAY_TEMPERATURE,
 #                 default=DEFAULT_AWAY_TEMPERATURE): vol.Coerce(float),
 #    vol.Optional(CONF_COOL_AWAY_TEMPERATURE,
@@ -78,6 +86,9 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 #    vol.Optional(CONF_HEAT_AWAY_TEMPERATURE,
 #                 default=DEFAULT_HEAT_AWAY_TEMPERATURE): vol.Coerce(float),
 })
+
+## how long the OAuth token last for in evohome-client
+_OAUTH_TIMEOUT_SECONDS = 3480  ## is actually 3600s, or 1hr
 
 
 def setup_platform(hass, config, add_devices, discovery_info=None):
@@ -90,18 +101,22 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     username = config.get(CONF_USERNAME)
     password = config.get(CONF_PASSWORD)
 
-# Use the evohome-client v2 API  (v2 of EC API uses OAuth)
+# Use the evohome-client v2 API (which uses OAuth)
 #   from evohomeclient  import EvohomeClient as EvohomeClientVer1  ## uses v1 of the api
     from evohomeclient2 import EvohomeClient as EvohomeClient      ## uses v2 of the api
 
+    _LOGGER.info("Connecting to the Honeywell web API now...")
     try:
 # Open a session to Honeywell's servers
         ec_api = EvohomeClient(username, password, debug=False)
-        _LOGGER.debug("Connected OK by logging into the Honeywell web API.")
-
-    except socket.error:
-        _LOGGER.error("Failed to connect (socket.error) whilst logging into the Honeywell web API.")
-        return False
+# the OAuth token needs refreshing after 1hr, but evohome-client has no means of doing so...
+        timeout = datetime.now() + timedelta(seconds=_OAUTH_TIMEOUT_SECONDS)
+        _LOGGER.info(" - connected OK to the Honeywell web API, OAuth token expires at %s", timeout.strftime('%Y-%m-%d %H:%M:%S'))
+        
+    except:
+        _LOGGER.error("Failed to connect to the Honeywell web API!")
+        raise
+        
 
 
 # Although Installations, Gateways, ControlSystems are 1:M, & 1:M, evohome-client assumes 1:1:1??
@@ -122,18 +137,21 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 # Collect each (child) zone as a (climate component) device
     evo_devices = []
     for zone in controller['zones']:
-        _LOGGER.debug("Found Zone: id: %s, type: %s, name: %s", zone['zoneId'], zone['zoneType'], zone['name'])
+        _LOGGER.info("Found Zone: id: %s, type: %s, name: %s", zone['zoneId'], zone['zoneType'], zone['name'])
 #       if zone['zoneType'] in [ "RadiatorZone", "ZoneValves" ]:  # what about DHW - how to exclude?
         child = evoZone(ec_api, zone)
         evo_devices.append(child)  # add this zone to the list of devices
 
 # Collect the (parent) controller (a merge of location & controller)
 #   parent = evoController(ec_api, controller, location, evo_devices)  ## (ec_api, device, identifier, children[])
-    parent = evoController(ec_api, location, evo_devices)              ## (ec_api, device, children[])
+    parent = evoController(ec_api, location, evo_devices, timeout)     ## (ec_api, device, children[])
 
 # Create them all in one batch - do I need to use: itertools.chain(a, b)
 ## what does the 'True' do: add_devices(evo_devices, True)? initial update(), it seems it takes too long?
-    add_devices([ parent ] + evo_devices, False)  ## initial update: doesn't work here
+    add_devices([ parent ] + evo_devices, True)  ## initial update: True doesn't work properly
+#   add_devices([ parent ], True)  ## initial update: True doesn't work properly
+#   sleep(5)
+#   add_devices(evo_devices, True)  ## initial update: True doesn't work properly
 
 #   parent.update()  ## initial update: doesn't work here
 
@@ -145,13 +163,15 @@ class evoController(ClimateDevice):
     """Representation of a Honeywell evohome zone (thermostat)."""
 
 #   def __init__(self, client, controlSystem, locationInfo, childZones):
-    def __init__(self, client, locationInfo, childZones):
+    def __init__(self, client, locationInfo, childZones, tokenTimeout):
         """Initialize the controller."""
         _LOGGER.debug("Creating Controller (__init__): id: %s, name: %s", locationInfo['locationId'], locationInfo['name'])
 
         self.client = client
+        self._tokenTimeout = tokenTimeout
+        
         self._id = locationInfo['locationId']
-        self._name = "_" + locationInfo['name'] + " (controller)"  ## a hack to put the controller on top
+        self._name = "_" + locationInfo['name'] + " (controller)"  ## a hack to list the controller first
         self._childZones = childZones
 
         self._supported_features = SUPPORT_OPERATION_MODE
@@ -166,7 +186,8 @@ class evoController(ClimateDevice):
 #       self._away_temp = 10
 #       self._away = False
 
-## See: https://developers.home-assistant.io/docs/en/creating_platform_code_review.html
+## This is a hack that needs sorting out...
+# See: https://developers.home-assistant.io/docs/en/creating_platform_code_review.html
 # - it says: Do not call update() in constructor, use add_devices(devices, True) instead.
         self.update() ## initial update: does work here
 ## what about: the_zone.schedule_update_ha_state()       
@@ -229,7 +250,7 @@ class evoController(ClimateDevice):
         """Set the operating mode of the controller.  Note that 'AutoWithReset may not be a
         mode in itself: instead, it _should_ lead to 'Auto' mode after resetting all the zones
         to 'FollowSchedule'.  'HeatingOff' simply sets setpoints to a minimum value."""
-        _LOGGER.info("Just started: set_operation_mode(controller, %s), operation")
+        _LOGGER.debug("Just started: set_operation_mode(controller, %s), operation")
 
 ### Controller: operations vs (operating) modes...
 
@@ -238,14 +259,8 @@ class evoController(ClimateDevice):
         ## here, we call 
           OPERATING_MODE_AUTOWITHRESET = 5
           self.client.locations[0]._gateways[0]._control_systems[0]._set_status(OPERATING_MODE_AUTOWITHRESET)
-          self._operating_mode = "Auto"  ## this doesn't work
+#         self._operating_mode = "Auto"  ## this doesn't work
 
-## I'm not sure if this works either...          
-          for child in self._childZones:
-            _LOGGER.debug("for child %s (%s)...", child._id, child._name)
-            child._operating_mode = "FollowSchedule"
-            child.update()
-          
         else:
           self._operating_mode = operation
 # There is no EvohomeClient.set_status_reset exposed via the client API, so
@@ -268,8 +283,20 @@ class evoController(ClimateDevice):
 
 # this should be used to update zones after change effected to controller, it
 # doesn't see to work, though...
-        sleep(10)
+
+## I'm not sure if this works either...          
+        _LOGGER.debug("ZX AAA")
+#       sleep(10)
+#       for entity in self._childZones:
+#           _LOGGER.info("for child %s (%s), schedule_update_ha_state()", entity._id, entity._name)
+#           entity.schedule_update_ha_state(True)
+          
+        _LOGGER.debug("ZX BBB")
         self.update()
+#       self.schedule_update_ha_state(True)
+#       self.schedule_update_ha_state(True)
+        _LOGGER.debug("ZX CCC")
+        
 
 
     @property
@@ -302,8 +329,10 @@ class evoController(ClimateDevice):
 
     def update(self):
         """Get the latest state (operating mode) of the controller and
-        update the state (temp, setpoint) of all children zones."""
-        _LOGGER.debug("Just started: update(controller)")
+        update the state (temp, setpoint) of all children zones.
+        
+        (TBA) Also, get the latest schedule of the controller every hour."""
+        _LOGGER.info("Just started: update(controller = %s)", self._name)
 
 #       if data['thermostat'] == 'DOMESTIC_HOT_WATER':
 #           self._name = 'Hot Water'
@@ -312,34 +341,42 @@ class evoController(ClimateDevice):
 #           self._name = data['name']
 #           self._is_dhw = False
 
-#           status=self.client.locations[0].status()
-#           _LOGGER.debug(status)
+## if the access token has expired, we need to re-authenticate to get another
+        if datetime.now() > self._tokenTimeout:
+            _LOGGER.info("OAuth token about to expire.  Re-connecting to the Honeywell web API now...")
+            try:
+# Open a session to Honeywell's servers
+#               self.client.access_token = None
+                self.client._login()
+# the OAuth token needs refreshing after 1hr, but evohome-client has no means of doing so...
+                self._tokenTimeout = datetime.now() + timedelta(seconds=_OAUTH_TIMEOUT_SECONDS)
 
-#           tcs=status['gateways'][0]['temperatureControlSystems'][0]
-#           currentmode=tcs['systemModeStatus']['mode']
-#           self.client.system_mode = currentmode
-            #_LOGGER.error(status)
+                _LOGGER.info(" - connected OK to the Honeywell web API, OAuth token expires at %s", self._tokenTimeout.strftime('%Y-%m-%d %H:%M:%S'))
 
+            except:
+                _LOGGER.error("Failed to reconnect to the Honeywell web API!")
+                raise
+            
 
-        try:
-            # Only refresh if this is the "master" device,
-            # others will pick up the cache
-#           ec_tmp = self.client1.temperatures()
-            ec_tmp = self.client.locations[0].status()
-
-        except TypeError:
-        # this is the error - does this code skip a update cycle?
-            _LOGGER.error("Update (of location) failed: TypeError (usually because OAuth token has timed out?)")
-
+        
 ### http://www.automatedhome.co.uk/vbulletin/showthread.php?3863-Decoded-EvoHome-API-access-to-control-remotely&p=20192&viewfull=1#post20192
 # curl -s -v https://rs.alarmnet.com/TotalConnectComfort/Auth/OAuth/Token
 #     -H "Authorization: Basic YjAxM2FhMjYtOTcyNC00ZGJkLTg4OTctMDQ4YjlhYWRhMjQ5OnRlc3Q="
 #     --data "grant_type=refresh_token&scope=EMEA-V1-Basic+EMEA-V1-Anonymous+EMEA-V1-Get-Current-User-Account&refresh_token=<REFRESH_TOKEN>"
 
-            self.client.access_token = None
-            self.client._login()
-            return
+#~       try:
+            # Only refresh if this is the "master" device,
+            # others will pick up the cache
+#           ec_tmp = self.client1.temperatures()
+#~          ec_tmp = self.client.locations[0].status()
 
+#~      except TypeError:
+        # this is the error - does this code skip a update cycle?
+#~          _LOGGER.error("Update (of location) failed: TypeError (usually because OAuth token has timed out?)")
+
+#~          return
+
+        ec_tmp = self.client.locations[0].status()
         ec_tcs = ec_tmp['gateways'][0]['temperatureControlSystems'][0]
 #       _LOGGER.debug(ec_tcs)
 
@@ -360,9 +397,9 @@ class evoController(ClimateDevice):
 #                   child.update()
                     break
 
-
+                    
         try:
-            from evohomeclient  import EvohomeClient as EvohomeClientVer1  ## uses v1 of the api
+            from evohomeclient import EvohomeClient as EvohomeClientVer1  ## uses v1 of the api
             ev_api = EvohomeClientVer1(self.client.username, self.client.password)
             zones = list(ev_api.temperatures(force_refresh=True)) # use list() to convert from a generator
 
@@ -385,9 +422,7 @@ class evoController(ClimateDevice):
         if _LOGGER.isEnabledFor(logging.DEBUG):
             for child in self._childZones:
                 _LOGGER.debug("update(controller) - for child %s (%s), temp = %s.", child._id, child._name, child._current_temperature)
-
-
-            
+          
             
 
 class evoZone(ClimateDevice):
@@ -514,7 +549,7 @@ class evoZone(ClimateDevice):
 
     def set_operation_mode(self: ClimateDevice, operation: str, setpoint=None, until=None) -> None:
         """Set the operating mode for the zone."""
-        _LOGGER.info("for zone = %s: set_operation_mode(%s, %s, %s)", self._name, operation, setpoint, until)
+        _LOGGER.debug("for zone = %s: set_operation_mode(%s, %s, %s)", self._name, operation, setpoint, until)
 
 #       zone = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id['3432521'])
         zone = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id[self._id]
@@ -549,7 +584,7 @@ class evoZone(ClimateDevice):
 
     def update(self):
         """Get the latest state (temperature, setpoint, mode) of the zone."""
-        _LOGGER.debug("Just started: update(%s)", self._name)
+        _LOGGER.info("Just started: update(zone = %s)", self._name)
         return
 
 # No updates here - the controller updates all it zones

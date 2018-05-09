@@ -19,8 +19,13 @@ climate:
 
 ## Improvements over the existing Honeywell component
 
-1. Uses v2 of the (EU) API: minimal noticeable benefit as yet, but (sadly) temp precision is reduced from .1°C to .5°C (but see below).
-2. Exposes the controller as a separate entity (from the zones), and...
-3. Correctly assigns operating modes to the controller (e.g. Eco/Away modes) and it's zones (e.g. FollowSchedule/PermanentOverride modes)
-4. Greater efficiency: loads all entities in a single `add_devices()` call, and fewer api calls to Honeywell during initialisation.
-5. Leverages v1 of the API to increase precision of reported temps to 0.1°C (actually the API reports 0.01, but HA only handles 0.1).  Falls back to v2 temps if unable to get v1 temps. 
+1. Uses v2 of the (EU) API via evohome-client: minimal noticeable benefit as yet, but (sadly) temp precision is reduced from .1°C to .5°C (but see below).
+2. Leverages v1 of the API to increase precision of reported temps to 0.1°C (actually the API reports 0.01, but HA only handles 0.1).  Falls back to v2 temps if unable to get v1 temps. 
+3. Exposes the controller as a separate entity (from the zones), and...
+4. Correctly assigns operating modes to the controller (e.g. Eco/Away modes) and it's zones (e.g. FollowSchedule/PermanentOverride modes)
+5. Greater efficiency: loads all entities in a single `add_devices()` call, and uses fewer api calls to Honeywell during initialisation/polling (i.e. one per location rather than one per zone).
+
+## Problems with current implemenation
+
+1. The controller, which doesn't have a `current_temperature` is implemented as a climate entity, and HA expects all climate entities to report a temperature.
+2. The underlying api (evohomeclient2) has some issues (e.g. no provision to refresh OAuth tokens) that requires work-arounds.
