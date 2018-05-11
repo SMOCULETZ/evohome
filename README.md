@@ -2,7 +2,9 @@
 
 Support for Honeywell (EU-only) Evohome installations: one controller and multiple zones.
 
-This is beta-level code, YMMV.  It provides functionality that the existing Honeywell climate component does not (mainly 3 & 4, below) and you can run it alongside that component.
+It provides functionality that the existing Honeywell climate component does not (mainly 3 & 4, below) and you can run it alongside that component.
+
+This is beta-level code, YMMV.  For now, you may want to use the 0.1 branch.
 
 NB: this is _for EU-based systems only_, it will not work with US-based systems (it will only use the EU-based API).
 
@@ -11,12 +13,12 @@ NB: this is _for EU-based systems only_, it will not work with US-based systems 
 To install this custom component, copy it to `${HASS_CONFIG_DIR}/custom_components`, for example:
   `git clone https://github.com/zxdavb/evohome ~/.homeassistant/custom_components`
 
-The `configuration.yaml` is as below (note `platform: evohome` rather than `platform: honeywell`)...
+The `configuration.yaml` is as below (note `evohome:` rather than `honeywell`)...
 ```
 evohome:
-    username: !secret_evohome_username
-    password: !secret_evohome_password
-    scan_interval: 300  # this is the recommended minimum
+  username: !secret_evohome_username
+  password: !secret_evohome_password
+  scan_interval: 300  # this is the recommended minimum
 ```
 
 ## Improvements over the existing Honeywell component
