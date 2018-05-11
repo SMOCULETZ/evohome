@@ -6,14 +6,14 @@ This is beta-level code, YMMV.  It provides functionality that the existing Hone
 
 NB: this is _for EU-based systems only_, it will not work with US-based systems (it will only use the EU-based API).
 
-## Installation instructions
+## Installation instructions (have recently changed)
 
-To install this custom component, copy it to `${HASS_CONFIG_DIR}/custom_components/climate/evohome.py`.
+To install this custom component, copy it to `${HASS_CONFIG_DIR}/custom_components`, for example:
+  `git clone https://github.com/zxdavb/evohome ~/.homeassistant/custom_components`
 
 The `configuration.yaml` is as below (note `platform: evohome` rather than `platform: honeywell`)...
 ```
-climate:
-  - platform: evohome
+evohome:
     username: !secret_evohome_username
     password: !secret_evohome_password
     scan_interval: 300  # this is the recommended minimum
@@ -33,5 +33,5 @@ climate:
 2. Away mode (as understood by HA), is not implemented as yet - however, you can use service calls to `climate.set_operation_mode` with thw controller or zone entities.
 3. The underlying api (evohomeclient2) has some issues (e.g. no provision to refresh OAuth tokens) that requires work-arounds.
 4. The code is currently messy, and architecturally unsatisfying (e.g. the controller updates the zones private attributes directly).
-5. No provision for DHW.
-6. No provision for schedules.
+5. No provision for DHW (yet).
+6. No provision for schedules (yet).
