@@ -16,8 +16,8 @@ To install this custom component, copy it to `${HASS_CONFIG_DIR}/custom_componen
 The `configuration.yaml` is as below (note `evohome:` rather than `honeywell`)...
 ```
 evohome:
-  username: !secret_evohome_username
-  password: !secret_evohome_password
+  username: !secret evohome_username
+  password: !secret evohome_password
   scan_interval: 300  # this is the recommended minimum
 ```
 
