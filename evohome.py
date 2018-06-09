@@ -636,7 +636,7 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 
         if self._target_temperature == 5:
 #           if EVO_FOLLOW and sched-temp <> 5:
-            _LOGGER.debug("state(ControllerEntity=%s): changed from %s to %s.", self._id, EVOSTATE_FOLLOW, EVOSTATE_OPENWINDOW)
+            _LOGGER.debug("state(ControllerEntity=%s): changed from %s to %s.", self._id, EVO_FOLLOW, EVO_OPENWINDOW)
             return EVO_OPENWINDOW
         else:
             _LOGGER.debug("state(ControllerEntity=%s): unchanged as %s.", self._id, self._current_operation)
