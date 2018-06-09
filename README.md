@@ -13,7 +13,7 @@ NB: this is _for EU-based systems only_, it will not work with US-based systems 
 To install this custom component, copy it to `${HASS_CONFIG_DIR}/custom_components`, for example:
   `git clone https://github.com/zxdavb/evohome ~/.homeassistant/custom_components`
 
-The `configuration.yaml` is as below (note `evohome:` rather than `honeywell`)...
+The `configuration.yaml` is as below (note `evohome:` rather than `climate:` & `- platform: honeywell`)...
 ```
 evohome:
   username: !secret evohome_username
@@ -36,7 +36,7 @@ Note that `scan_interval` is currently hard-coded to 60 secs.  This is OK (see b
 
 1. FIXED, option b): The controller, which doesn't have a `current_temperature` is implemented as a climate entity, and HA expects all climate entities to report a temperature.  So you will see an empty temperature graph for this entity.  A fix will require: a) changing HA (to accept a climate entity without a temperature (like a fan entity), or; b) changing the controller to a different entity class (but this may break some of the away mode integrations planned for the future).
 2. Away mode (as understood by HA), is not implemented as yet - however, you can use service calls to `climate.set_operation_mode` with the controller or zone entities to set Away mode (as understood by evohome).
-3. FIXED (work-around): The underlying api (evohomeclient2) has some issues (e.g. no provision to refresh OAuth tokens) that caused failsure after 1 hout.  A proper fix with require changes to evohomeclient2.
+3. FIXED (work-around): The underlying api (evohomeclient2) has some issues (e.g. no provision to refresh OAuth tokens, that caused failure after 1 hour).  A proper fix with require changes to evohomeclient2.
 4. FIXED (architecturally, but still a little messy): The code is currently messy, and architecturally unsatisfying (e.g. the controller updates the zones' private attributes directly).
 5. No provision for DHW (yet).
 6. No provision for schedules (yet).
