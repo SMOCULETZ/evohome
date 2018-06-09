@@ -2,9 +2,9 @@
 
 Support for Honeywell (EU-only) Evohome installations: one controller and multiple zones.
 
-It provides functionality that the existing Honeywell climate component does not (mainly 3 & 4, below) and you can run it alongside that component.
+It provides functionality that the existing Honeywell climate component does not (e.g. 3 & 4, below) and you can run it alongside that component.
 
-This is beta-level code, YMMV.  For now, you may want to use the 0.1 branch.
+This is beta-level code, YMMV.
 
 NB: this is _for EU-based systems only_, it will not work with US-based systems (it will only use the EU-based API).
 
@@ -18,8 +18,10 @@ The `configuration.yaml` is as below (note `evohome:` rather than `honeywell`)..
 evohome:
   username: !secret evohome_username
   password: !secret evohome_password
-  scan_interval: 300  # this is the recommended minimum
+# scan_interval: 300  # this is the recommended minimum
 ```
+
+Note that `scan_interval` is currently hard-coded to 60 secs.  This is OK (see below).
 
 ## Improvements over the existing Honeywell component
 
@@ -37,3 +39,4 @@ evohome:
 4. The code is currently messy, and architecturally unsatisfying (e.g. the controller updates the zones private attributes directly).
 5. No provision for DHW (yet).
 6. No provision for schedules (yet).
+7. The `scan_interval` parameter is currently ignored, and thus defaults to 60 secs.  This is OK as this code polls Honeywell servers only twice per scan interval, or 120 per hour.  This compares to the existing evohome implementation, which is once per zone per scan interval.  I understand that up to 250 polls per hour is considered OK.
