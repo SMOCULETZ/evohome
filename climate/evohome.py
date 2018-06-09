@@ -1,13 +1,5 @@
 """
-Support for Honeywell (EU-only) Evohome installations: One controller and multiple zones.
-
-To install this custom component, copy it to ${HASS_CONFIG_DIR}/custom_components/climate/evohome.py.
-The configuration.yaml as below...
-
-evohome:
-  username: !secret_evohome_username
-  password: !secret_evohome_password
-  scan_interval: 300
+Support for Honeywell (EU-only) Evohome installations: 1 controller & 1+ zones.
 """
 # regarding: https://developers.home-assistant.io/docs/en/development_index.html
 #  - checked with: flake8 --ignore=E303,E241 --max-line-length=150 evohome.py
@@ -27,6 +19,7 @@ from custom_components.evohome import (evoControllerEntity, evoZoneEntity)
 import requests
 import voluptuous as vol
 
+from homeassistant.core import callback
 # from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import track_state_change
 
@@ -66,8 +59,7 @@ from homeassistant.const import (
     PRECISION_HALVES, PRECISION_TENTHS
     )
 
-# CONF_HIGH_PRECISION='high_precision'
-    
+  
 ## https://www.home-assistant.io/developers/component_deps_and_reqs/
 #  https://github.com/home-assistant/home-assistant.github.io/pull/5199
 REQUIREMENTS = ['evohomeclient==0.2.5']
@@ -77,7 +69,9 @@ _LOGGER = logging.getLogger(__name__)
 
 
 from custom_components.evohome import (
-    DATA_EVOHOME
+    DATA_EVOHOME,
+    DISPATCHER_EVOHOME,
+#   DOMAIN,
     )
     
 
@@ -131,7 +125,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
     
 
-class evoController(evoControllerEntity, ClimateDevice):
+class evoController(evoControllerEntity):
 #lass evoController(evoControllerEntity, ClimateDevice):
     """Representation of a Honeywell evohome controller."""
 
@@ -140,17 +134,64 @@ class evoController(evoControllerEntity, ClimateDevice):
 
         _LOGGER.debug("Started: __init__(controller = %s)", controller)
         super().__init__(hass, client, controller)
+
+# and listen for update packets      
+        hass.helpers.dispatcher.async_dispatcher_connect(DISPATCHER_EVOHOME, 
+            self._connect)  ## def async_dispatcher_connect(signal, target):  
+
+# Process updates in parallel?
+        parallel_updates = True
+
         _LOGGER.debug("Finished: __init__(controller)")
+#       return
+
+
+    @callback
+    def _connect(self, packet):
+        """Process a dispatcher connect."""
+        _LOGGER.debug("Just received %s packet from %s", 
+            packet['type'], packet['sender'])
+
+#       self.update
+        self.async_schedule_update_ha_state()
+
+
+    def update(self):
+        super().update()
+
+# ZX: Now (wait 5s and then) send a message to the slaves to update themselves
+# store data in hass.data, platforms subscribe with dispatcher_connect, component notifies of updates using dispatch_send
+#       sleep(5)
+#       _LOGGER.info("About to send UPDATE packet...")
+#       self.hass.helpers.dispatcher.async_dispatcher_send(DISPATCHER_EVOHOME, "UPDATE")        ## def async_dispatcher_send(hass, signal, *args):
+#       self.hass.helpers.dispatcher.async_dispatcher_connect(DISPATCHER_EVOHOME, self.target)  ## def async_dispatcher_connect(hass, signal, target):
 
 
 
 
-class evoZone(evoZoneEntity, ClimateDevice):
+
+class evoZone(evoZoneEntity):
     """Representation of a Honeywell evohome heating zone."""
 
     def __init__(self, hass, client, zone):
         """Initialize the zone."""
-        
+
         _LOGGER.debug("Started: __init__(zone = %s)", zone)
         super().__init__(hass, client, zone)
+
+# and listen for update packets      
+        hass.helpers.dispatcher.async_dispatcher_connect(DISPATCHER_EVOHOME, 
+            self._connect)  ## def async_dispatcher_connect(signal, target):  
+
         _LOGGER.debug("Finished: __init__(zone)")
+#       return
+
+
+    @callback
+    def _connect(self, packet):
+        """Process a dispatcher connect."""
+        _LOGGER.debug("Just received %s packet from %s", packet['type'], packet['sender'])
+
+        self.update
+
+        self.async_schedule_update_ha_state()

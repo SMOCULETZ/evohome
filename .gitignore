@@ -1,0 +1,7 @@
+*
+secrets.yaml
+!.gitignore
+!LICENSE
+!README.md
+!*.py
+
