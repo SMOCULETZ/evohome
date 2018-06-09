@@ -150,7 +150,7 @@ class evoController(evoControllerEntity):
     def _connect(self, packet):
         """Process a dispatcher connect."""
         _LOGGER.debug("Just received %s packet from %s", 
-            packet['type'], packet['sender'])
+            packet['signal'], packet['sender'])
 
 #       self.update
         self.async_schedule_update_ha_state()
@@ -190,7 +190,7 @@ class evoZone(evoZoneEntity):
     @callback
     def _connect(self, packet):
         """Process a dispatcher connect."""
-        _LOGGER.debug("Just received %s packet from %s", packet['type'], packet['sender'])
+        _LOGGER.debug("Just received %s packet from %s", packet['signal'], packet['sender'])
 
         self.update
 
