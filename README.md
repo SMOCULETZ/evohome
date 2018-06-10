@@ -35,6 +35,7 @@ Note that `scan_interval` is currently hard-coded to 60 secs.  This is OK (see b
 ## Problems with current implemenation
 
 0. It takes one scan_interval fro the Zones to reflect changes made elsewhere in the location (usu. by the Controller).
+0. Zones will incorrectly report OpenWindowMode (e.g. when Controller is set to HeatingOff).
 1. FIXED, option b): The controller, which doesn't have a `current_temperature` is implemented as a climate entity, and HA expects all climate entities to report a temperature.  So you will see an empty temperature graph for this entity.  A fix will require: a) changing HA (to accept a climate entity without a temperature (like a fan entity), or; b) changing the controller to a different entity class (but this may break some of the away mode integrations planned for the future).
 2. Away mode (as understood by HA), is not implemented as yet - however, you can use service calls to `climate.set_operation_mode` with the controller or zone entities to set Away mode (as understood by evohome).
 3. FIXED (work-around): The underlying api (evohomeclient2) has some issues (e.g. no provision to refresh OAuth tokens, that caused failure after 1 hour).  A proper fix with require changes to evohomeclient2.

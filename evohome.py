@@ -81,15 +81,17 @@ REQUIREMENTS = ['evohomeclient==0.2.5']
 ## https://www.home-assistant.io/components/logger/
 _LOGGER = logging.getLogger(__name__)
 
-DOMAIN = 'evohome'
+DOMAIN='evohome'
 
+# Validation of the user's configuration.
 CONFIG_SCHEMA = vol.Schema({
     DOMAIN: vol.Schema({
-    vol.Required(CONF_USERNAME): cv.string,
-    vol.Required(CONF_PASSWORD): cv.string,
-    vol.Optional(CONF_SCAN_INTERVAL, default=300): cv.positive_int,
-    vol.Optional('high_precision', default=False): cv.boolean,
-    })}, extra=vol.ALLOW_EXTRA)
+        vol.Required(CONF_USERNAME): cv.string,
+        vol.Required(CONF_PASSWORD): cv.string,
+        vol.Optional(CONF_SCAN_INTERVAL, default=300): cv.positive_int,
+#       vol.Optional('high_precision', default=False): cv.boolean,
+    }),
+}, extra=vol.ALLOW_EXTRA)
 
 
 ## how long the OAuth token last for in evohome-client
@@ -97,7 +99,6 @@ _OAUTH_TIMEOUT_SECONDS = 3480  ## is actually 3600s, or 1hr
 _OAUTH_TIMEOUT_FORMAT = '%Y-%m-%d %H:%M:%S'
 DATA_EVOHOME = 'data_evohome'
 DISPATCHER_EVOHOME = 'dispatcher_evohome'
-DOMAIN='evohome'
 
 
 ## Operations: Usually, a Mode causes a corresponding State, except...
@@ -176,6 +177,7 @@ def setup(hass, config):
     hass.data[DATA_EVOHOME]['status']       = _returnTempsAndModes(ec_api)
     hass.data[DATA_EVOHOME]['lastUpdated']  = lastupdate
 
+# Some of this data should be redacted before getting into the logs
     _LOGGER.info("hass.data[DATA_EVOHOME]: %s", hass.data[DATA_EVOHOME])
 
 ## Load platforms...
@@ -191,18 +193,34 @@ def _returnConfiguration(client, force_update = False):
 ## client.installation_info[0] is more efficient than client.fullInstallation()
     _LOGGER.info("_returnConfiguration(client)")
     if force_update is True:
-        _LOGGER.info("Calling client API: client.installation()...")
+        _LOGGER.debug("Calling client API: client.installation()...")
         client.installation()           # this will cause a new call, and...
+        
+    _temp = client.installation_info[0] # this attribute is updated by that call
+    
+# Now redact unneeded info.
+    _temp['locationInfo']['locationId'] = 'REDACTED'
+    _temp['locationInfo']['streetAddress'] = 'REDACTED'
 
-    return client.installation_info[0]  # this attribute is updated by that call
+
+    _temp['locationInfo']['locationOwner']['userId'] = 'REDACTED'
+    _temp['locationInfo']['locationOwner']['username'] = 'REDACTED'
+    _temp['locationInfo']['locationOwner']['firstname'] = 'REDACTED'
+    _temp['locationInfo']['locationOwner']['lastname'] = 'REDACTED'
+
+    _temp['gateways'][0]['gatewayInfo']['gatewayId'] = 'REDACTED'
+    _temp['gateways'][0]['gatewayInfo']['mac'] = 'REDACTED'
+    _temp['gateways'][0]['gatewayInfo']['crc'] = 'REDACTED'
+
+    return _temp
 
 
 def _returnTempsAndModes(client, force_update = False):
-## Get the latest modes/temps (assume only 1 location/controller)
+## Get the latest modes/temps (assumes only 1 location/controller)
     _LOGGER.info("_returnTempsAndModes(client)")
 
-    if force_update is True:
-        hass.data[DATA_EVOHOME]['installation'] = client.installation()
+#   if force_update is True:
+#       hass.data[DATA_EVOHOME]['installation'] = client.installation()
 
     _LOGGER.info("Calling client API: client.locations[0].status()...")
     ec2_status = client.locations[0].status()  # get latest modes/temps
