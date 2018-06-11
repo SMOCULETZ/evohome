@@ -117,8 +117,7 @@ EVO_HEATOFF    = 'HeatingOff'
 EVO_FOLLOW     = 'FollowSchedule'
 EVO_PERMOVER   = 'TemporaryOverride'
 EVO_TEMPOVER   = 'PermanentOverride'
-EVO_OPENWINDOW = 'OpenWindowMode'
-
+EVO_OPENWINDOW = 'OpenWindow'
 
 
 def setup(hass, config):
@@ -137,6 +136,7 @@ def setup(hass, config):
 # Use the evohome-client v2 API (which uses OAuth)
     from evohomeclient2 import EvohomeClient as EvohomeClient
 
+## ZX: API Call, 
     _LOGGER.info("Connecting to the Honeywell web API now...")
     try:
 ## Open a session to Honeywell's servers - this call includes:
@@ -192,8 +192,9 @@ def setup(hass, config):
 def _returnConfiguration(client, force_update = False):
 ## client.installation_info[0] is more efficient than client.fullInstallation()
     _LOGGER.info("_returnConfiguration(client)")
-    if force_update is True:
-        _LOGGER.debug("Calling client API: client.installation()...")
+
+    if force_update is True: # BUG: or client.installation_info = Null
+        _LOGGER.info("Calling client v2 API [?x]: client.installation()...")
         client.installation()           # this will cause a new call, and...
         
     _temp = client.installation_info[0] # this attribute is updated by that call
@@ -220,43 +221,44 @@ def _returnTempsAndModes(client, force_update = False):
     _LOGGER.info("_returnTempsAndModes(client)")
 
 #   if force_update is True:
+#        _LOGGER.info("Calling client v2 API [?x]: client.installation()...")
 #       hass.data[DATA_EVOHOME]['installation'] = client.installation()
 
-    _LOGGER.info("Calling client API: client.locations[0].status()...")
+    _LOGGER.info("Calling client v2 API [? requests]: client.locations[0].status()...")
     ec2_status = client.locations[0].status()  # get latest modes/temps
     ec2_tcs = ec2_status['gateways'][0]['temperatureControlSystems'][0]
 
     _LOGGER.debug("ec2_api.status() = %s", ec2_status)
 
     try:
-        _LOGGER.info('Connecting to the Honeywell web v1 API for higher precision temps...')
+        _LOGGER.debug("Using client v1 API (for higer precision temps)")
 
         from evohomeclient import EvohomeClient as EvohomeClientVer1  ## uses v1 of the api
         ec1_api = EvohomeClientVer1(client.username, client.password)
-        _LOGGER.info(" - connected OK: ec1_api")
+
+        _LOGGER.info("Calling client v1 API [2 requests]: client.temperatures(force_refresh = True)...")
+# is: _populate_user_info [1x] & _populate_full_data() [1x]
+        ec1_temps = ec1_api.temperatures(force_refresh = True)  # is a generator?
+        _LOGGER.debug("ev_api.temperatures() = %s", ec1_temps)
+
+        for temp in ec1_temps:
+            _LOGGER.debug("Zone %s (%s) reports temp %s", temp['id'], temp['name'], temp['temp'])
+
+            for zone in ec2_tcs['zones']:
+                _LOGGER.debug(" - is it slave %s (%s)?", zone['zoneId'], zone['name'])
+
+                if int(temp['id']) == int(zone['zoneId']):
+                    _LOGGER.debug(" - matched: temp changed from %s to %s.", zone['temperatureStatus']['temperature'], temp['temp'])
+                    _LOGGER.debug(" - matched: temp for child %s (%s) changed from %s to %s.", zone['zoneId'], zone['name'], zone['temperatureStatus']['temperature'], temp['temp'])
+                    zone['temperatureStatus']['temperature'] = temp['temp']
+
+                    break
 
     except:
-        _LOGGER.error("Failed to connect to the Honeywell web v1 API (for higher precision temps).")
+        _LOGGER.error("Failed to utilize the Honeywell web v1 client (for higer precision temps)")
         raise
 
-    _LOGGER.info("Calling client v1 API: client.temperatures(force_refresh = True)...")
-    ec1_temps = ec1_api.temperatures(force_refresh = True)  # is a generator?
-    _LOGGER.debug("ev_api.temperatures() = %s", ec1_temps)
-
-    for temp in ec1_temps:
-        _LOGGER.debug("Zone %s (%s) reports temp %s", temp['id'], temp['name'], temp['temp'])
-
-        for zone in ec2_tcs['zones']:
-            _LOGGER.debug(" - is it slave %s (%s)?", zone['zoneId'], zone['name'])
-
-            if int(temp['id']) == int(zone['zoneId']):
-                _LOGGER.debug(" - matched: temp changed from %s to %s.", zone['temperatureStatus']['temperature'], temp['temp'])
-                _LOGGER.debug(" - matched: temp for child %s (%s) changed from %s to %s.", zone['zoneId'], zone['name'], zone['temperatureStatus']['temperature'], temp['temp'])
-                zone['temperatureStatus']['temperature'] = temp['temp']
-
-                break
-
-        ec1_api = None  # do I need to clean this up?
+#       ec1_api = None  # do I need to clean this up?
 
     if _LOGGER.isEnabledFor(logging.DEBUG):
         for zone in ec2_tcs['zones']:
@@ -274,7 +276,7 @@ def _returnZoneSchedules(client):
 ## Collect each (slave) zone as a (climate component) device
     _LOGGER.info("Retreiving schedule for all zones")
     for z in client._get_single_heating_system()._zones:
-        _LOGGER.info("Calling client API: client.zone.schedule(%s)...", z.zoneId)
+        _LOGGER.info("Calling client v2 API [? requests]: client.zone.schedule(%s)...", z.zoneId)
         s = z.schedule()
         schedules[z.zoneId] = {'name': z.name, 'schedule': s}
 
@@ -339,30 +341,16 @@ class evoControllerEntity(evoEntity):
 
 
     @property
-    def should_poll(self):
-        """The controller will provide the state data."""
-        _LOGGER.info("should_poll(ControllerEntity=%s): %s", self._id, True)
-        return True
-
-
-    @property
-    def force_update(self):
-#   def poll(self):
-        """Controllers should update when state date is updated, even if it is unchanged."""
-        return True
-
-
-    @property
     def name(self):
         """Get the name of the controller."""
-        _LOGGER.info("name(ControllerEntity=%s): %s", self._id, self._name)
+        _LOGGER.debug("name(ControllerEntity=%s): %s", self._id, self._name)
         return self._name
 
 
     @property
     def icon(self):
         """Return the icon to use in the frontend UI."""
-        _LOGGER.info("icon(ControllerEntity=%s): %s", self._id, "mdi:thermostat")
+        _LOGGER.debug("icon(ControllerEntity=%s): %s", self._id, "mdi:thermostat")
         return "mdi:thermostat"
 
 
@@ -409,9 +397,7 @@ class evoControllerEntity(evoEntity):
         'Away' mode applies to the controller, not it's (slave) zones.
 
         'HeatingOff' doesn't turn off heating, instead: it simply sets setpoints
-        to a minimum value."""
-
-        _LOGGER.info("set_operation_mode(ControllerEntity=%s, mode=%s).", self._id, operation_mode)
+        to a minimum value (i.e. FrostProtect mode)."""
 
 ### Controller: operations vs (operating) modes...
 
@@ -421,11 +407,14 @@ class evoControllerEntity(evoEntity):
 # "AutoWithReset", after resetting all the zones to "FollowSchedule", _should_ lead to "Auto" mode (but doesn't?)
         if operation_mode == EVO_RESET:  ## a private function in the client API (it is not exposed)
         ## here, we call
-            _LOGGER.info("Calling client API: controller.set_status_%s())...", operation_mode)
+            _LOGGER.info(
+                "Calling client API: controller.set_status_%s())...", 
+                operation_mode
+            )
             _AUTOWITHRESET = 5
+            _LOGGER.info("Calling client v2 API [?x]: controller._set_status()...")
 #           self.client._get_single_heating_system._set_status(_AUTOWITHRESET)
             self.client.locations[0]._gateways[0]._control_systems[0]._set_status(_AUTOWITHRESET)
-#           self._current_operation = "Auto"  ## this doesn't work
 
         else:
             self._current_operation = operation_mode
@@ -443,23 +432,11 @@ class evoControllerEntity(evoEntity):
 
 # before calling func(), should check OAuth token still viable, but how?
             func = functions[operation_mode]
-            _LOGGER.info("Calling client API: controller.set_status_%s())...", operation_mode)
+            _LOGGER.info(
+                "Calling client API: controller.set_status_%s())...", 
+                operation_mode
+            )
             func()
-
-#       sleep(10)  # allow system to quiesce...
-
-
-## Finally, send a message informing the kids that operting mode has changed?...
-#       self.hass.bus.fire('mode_changed', {ATTR_ENTITY_ID: self._scs_id, ATTR_STATE: command})
-#       refreshEverything()
-
-#       _LOGGER.info("controller.schedule_update_ha_state()")
-#       self.schedule_update_ha_state()
-
-        packet = {'sender': 'controller', 'signal': 'update'}
-        _LOGGER.info("About to send a dispatcher packet...")
-## def async_dispatcher_send(hass, signal, *args):
-        self.hass.helpers.dispatcher.async_dispatcher_send(DISPATCHER_EVOHOME, packet)
 
         return
 
@@ -534,7 +511,9 @@ class evoControllerEntity(evoEntity):
         update the state (temp, setpoint) of all children zones.
 
         (TBA) Also, get the latest schedule of the controller every hour."""
-        _LOGGER.info("update(ControllerEntity=%s)", self._id)
+        _LOGGER.debug("Just started: update(ControllerEntity = %s)", 
+            str(self._id) + " [" + self._name + "]"
+        )
 
 ## TBA: no provision (yet) for DHW
 
@@ -631,33 +610,42 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 
 
     @property
-    def should_poll(self):
-#   def poll(self):
-        """Zones should not be polled?, the controller will maintain state data."""
-        return True
-
-
-    @property
-    def force_update(self):
-#   def poll(self):
-        """TBA."""
-        return False
-
-
-    @property
     def state(self):
         """Return the zone's current state (usually, its operation mode).
 
         A zone's state is usually its operation mode, but they may enter
         OpenWindowMode autonomously."""
-        _LOGGER.debug("state(ZoneEntity=%s): %s...", self._id, self._current_operation)
+        _LOGGER.info("state(ZoneEntity=%s): current_operation=%s...", self._id, self._current_operation)
 
+        if self.hass.data[DATA_EVOHOME]['status']['systemModeStatus']['mode'] == EVO_HEATOFF:
+            _LOGGER.info(
+                "state(ZoneEntity=%s): Controller == 'HeatingOff' (frost protect) mode",
+                self._id
+            )
+            return "FrostProtect"
+
+# Otherwise if the target_temp is 5, maybe because an open window was detected?
         if self._target_temperature == 5:
-#           if EVO_FOLLOW and sched-temp <> 5:
-            _LOGGER.debug("state(ControllerEntity=%s): changed from %s to %s.", self._id, EVO_FOLLOW, EVO_OPENWINDOW)
-            return EVO_OPENWINDOW
+            _LOGGER.info(
+                "state(ZoneEntity=%s): begin open window check...",
+                self._id
+            )
+
+#           if self._current_operation == EVO_FOLLOW and sched-temp <> 5:
+            if True: 
+                _LOGGER.info(
+                    "state(ZoneEntity=%s): OpenWindow mode assumed",
+                    self._id
+                )
+                return EVO_OPENWINDOW
+
         else:
-            _LOGGER.debug("state(ControllerEntity=%s): unchanged as %s.", self._id, self._current_operation)
+            _LOGGER.debug(
+                "state(ZoneEntity=%s): unchanged as %s.", 
+                self._id, 
+                self._current_operation
+            )
+
             return self._current_operation
 
 
@@ -848,7 +836,7 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 
     def update(self):
         """Get the latest state (operating mode, temperature) of a zone."""
-        _LOGGER.debug("Just started: update(zone = %s)",
+        _LOGGER.debug("Just started: update(ZoneEntity = %s)", 
             str(self._id) + " [" + self._name + "]"
             )
 
