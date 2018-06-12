@@ -178,7 +178,11 @@ def setup(hass, config):
     hass.data[DATA_EVOHOME]['lastUpdated']  = lastupdate
 
 # Some of this data should be redacted before getting into the logs
-    _LOGGER.info("hass.data[DATA_EVOHOME]: %s", hass.data[DATA_EVOHOME])
+    _temp = hass.data[DATA_EVOHOME]
+    _temp['installation']['locationInfo']['postcode'] = 'REDACTED'
+
+    _LOGGER.info("hass.data[DATA_EVOHOME]: %s", _temp)
+    _temp = ""
 
 ## Load platforms...
     load_platform(hass, 'climate', DOMAIN)
@@ -202,7 +206,7 @@ def _returnConfiguration(client, force_update = False):
 # Now redact unneeded info.
     _temp['locationInfo']['locationId'] = 'REDACTED'
     _temp['locationInfo']['streetAddress'] = 'REDACTED'
-
+    _temp['locationInfo']['city'] = 'REDACTED'
 
     _temp['locationInfo']['locationOwner']['userId'] = 'REDACTED'
     _temp['locationInfo']['locationOwner']['username'] = 'REDACTED'
