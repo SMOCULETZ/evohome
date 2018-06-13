@@ -146,7 +146,7 @@ class evoController(evoControllerEntity):
             str(self._id) + " [" + self._name + "]",
             operation_mode
         )
-        super().set_operation_mode(self, operation_mod)
+        super().set_operation_mode(self, operation_mode)
 
 #       sleep(10)  # allow system to quiesce...
 
