@@ -85,7 +85,7 @@ class evoController(evoControllerEntity):
     def __init__(self, hass, client, controller):
         """Initialize the evohome controller."""
 
-        _LOGGER.debug("Started: __init__(Controller = %s)", controller)
+        _LOGGER.debug("ZX __init__(Controller=%s)", controller)
         super().__init__(hass, client, controller)
 
 # listen for update packets...
@@ -105,7 +105,7 @@ class evoController(evoControllerEntity):
     def _connect(self, packet):
         """Process a dispatcher connect."""
         _LOGGER.info(
-            "Controller has received a '%s' packet from %s",
+            "ZX Controller has received a '%s' packet from %s",
             packet['signal'],
             packet['sender']
         )
@@ -120,11 +120,7 @@ class evoController(evoControllerEntity):
     def should_poll(self):
         """Controller should TBA. The controller will provide the state data."""
         _poll = True
-        _LOGGER.info(
-            "should_poll(Controller = %s): %s", 
-            self._id, 
-            _poll
-        )
+        _LOGGER.info("ZX should_poll(Controller=%s): %s", self._id, _poll)
         return _poll
 
 
@@ -132,21 +128,17 @@ class evoController(evoControllerEntity):
     def force_update(self):
         """Controllers should update when state date is updated, even if it is unchanged."""
         _force = True
-        _LOGGER.info(
-            "force_update(Controller = %s): %s", 
-            self._id, 
-            _force
-        )
+        _LOGGER.info("ZX force_update(Controller=%s): %s", self._id,  _force)
         return _force
 
 
     def set_operation_mode(self, operation_mode):
         _LOGGER.info(
-            "Started: set_operation_mode(Controller = %s, op_mode = %s)",
-            str(self._id) + " [" + self._name + "]",
+            "ZX set_operation_mode(Controller=%s, operation_mode=%s)",
+            self._id,
             operation_mode
         )
-        super().set_operation_mode(self, operation_mode)
+        super().set_operation_mode(operation_mode)
 
 #       sleep(10)  # allow system to quiesce...
 
@@ -158,7 +150,7 @@ class evoController(evoControllerEntity):
 #       _LOGGER.info("controller.schedule_update_ha_state()")
 #       self.schedule_update_ha_state()
 
-        _LOGGER.info("About to send a dispatcher packet...")
+        _LOGGER.info("ZZ About to send a dispatcher packet...")
         packet = {'sender': 'controller', 'signal': 'update'}
 ## def async_dispatcher_send(hass, signal, *args):
         self.hass.helpers.dispatcher.async_dispatcher_send(DISPATCHER_EVOHOME, packet)
@@ -167,9 +159,7 @@ class evoController(evoControllerEntity):
 
     def update(self):
         _LOGGER.info(
-            "Started: update(Controller = %s)",
-            str(self._id) + " [" + self._name + "]"
-        )
+            "ZX update(Controller=%s)", self._id)
         super().update()
 
 # ZX: Now (wait 5s and then) send a message to the slaves to update themselves
@@ -187,7 +177,7 @@ class evoZone(evoZoneEntity):
     def __init__(self, hass, client, zone):
         """Initialize the evohome zone."""
 
-        _LOGGER.debug("Started: __init__(Zone = %s)", zone)
+        _LOGGER.debug("ZX __init__(Zone=%s)", zone)
         super().__init__(hass, client, zone)
 
 # listen for update packets...
@@ -199,7 +189,7 @@ class evoZone(evoZoneEntity):
 
 
 
-        _LOGGER.debug("Finished: __init__(Zone = %s)", zone)
+        _LOGGER.debug("Finished: __init__(Zone=%s)", zone)
         return None
 
 
@@ -207,13 +197,17 @@ class evoZone(evoZoneEntity):
     def _connect(self, packet):
         """Process a dispatcher connect."""
         _LOGGER.info(
-            "Zone %s has received a '%s' packet from %s",
-            str(self._id) + " [" + self._name + "]",
+            "ZZ Zone %s has received a '%s' packet from %s",
+            self._id + " [" + self._name + "]",
             packet['signal'],
             packet['sender']
         )
+        _LOGGER.info(
+            "ZX  - Zone %s is calling self.update",
+            self._id + " [" + self._name + "]"
+        )
 
-        self.update
+#       self.update
         self.async_schedule_update_ha_state()
         return None
 
@@ -222,11 +216,7 @@ class evoZone(evoZoneEntity):
     def should_poll(self): #   OR: def poll(self):
         """Zones should not be polled?, the controller will maintain state data."""
         _poll = True
-        _LOGGER.info(
-            "should_poll(Zone = %s): %s", 
-            self._id, 
-            _poll
-        )
+        _LOGGER.info("ZX should_poll(Zone=%s): %s", self._id, _poll)
         return _poll
 
 
@@ -234,18 +224,11 @@ class evoZone(evoZoneEntity):
     def force_update(self):
         """Zones should TBA."""
         _force = False
-        _LOGGER.info(
-            "force_update(Zone = %s): %s", 
-            self._id, 
-            _force
-        )
+        _LOGGER.info("ZX force_update(Zone=%s): %s", self._id, _force)
         return _force
 
 
     def update(self):
-        _LOGGER.info(
-            "Started: update(Zone = %s)",
-            str(self._id) + " [" + self._name + "]"
-            )
+        _LOGGER.info("ZX update(Zone=%s)", self._id)
         super().update()
         return None
