@@ -430,7 +430,7 @@ class evoControllerEntity(evoEntity):
             ['systemModeStatus']['mode']
 
 
-        if operation_mode == self._opmode:
+        if operation_mode == _opmode:
             _LOGGER.info(" - operation mode unchanged??")
 
 # "AutoWithReset", after resetting all the zones to "FollowSchedule", _should_ lead to "Auto" mode (but doesn't?)
