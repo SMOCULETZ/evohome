@@ -80,18 +80,18 @@ from homeassistant.const import (
 #  https://github.com/home-assistant/home-assistant.github.io/pull/5199
 
 ## these vars for >=0.2.6 (is it v3 of the api?)
-#REQUIREMENTS = ['https://github.com/zxdavb/evohome-client/archive/pr-fix1.zip#evohomeclient==0.2.6']
-#_SETPOINT_CAPABILITIES = 'setpointCapabilities'
-#_SETPOINT_STATUS       = 'setpointStatus'
-#_TARGET_TEMPERATURE    = 'targetHeatTemperature'
-#_OAUTH_TIMEOUT_SECONDS = 1800 - 120  ## timeout is 30 mins
+REQUIREMENTS = ['https://github.com/zxdavb/evohome-client/archive/dev.zip#evohomeclient==0.2.20']
+_SETPOINT_CAPABILITIES = 'setpointCapabilities'
+_SETPOINT_STATUS       = 'setpointStatus'
+_TARGET_TEMPERATURE    = 'targetHeatTemperature'
+_OAUTH_TIMEOUT_SECONDS = 1800  ## timeout is 30 mins
 
 ## these vars for <=0.2.5...
-REQUIREMENTS = ['evohomeclient==0.2.5']
-_SETPOINT_CAPABILITIES = 'heatSetpointCapabilities'
-_SETPOINT_STATUS       = 'heatSetpointStatus'
-_TARGET_TEMPERATURE    = 'targetTemperature'
-_OAUTH_TIMEOUT_SECONDS = 3600 - 120  ## timeout is 60 mins
+#REQUIREMENTS = ['evohomeclient==0.2.5']
+#_SETPOINT_CAPABILITIES = 'heatSetpointCapabilities'
+#_SETPOINT_STATUS       = 'heatSetpointStatus'
+#_TARGET_TEMPERATURE    = 'targetTemperature'
+#_OAUTH_TIMEOUT_SECONDS = 3600  ## timeout is 60 mins
 
 ## https://www.home-assistant.io/components/logger/
 _LOGGER = logging.getLogger(__name__)
@@ -148,13 +148,18 @@ def setup(hass, config):
 #   timeout_long = config[DOMAIN].get(CONF_TIMEOUT_LONG, DEFAULT_TIMEOUT_LONG)
 
     hass.data[DATA_EVOHOME] = {}  ## without this, KeyError: 'data_evohome'
+    hass.data[DATA_EVOHOME]['scanInterval'] = config[DOMAIN][CONF_SCAN_INTERVAL]
+    _LOGGER.info(
+        "Scan interval is %s secs", 
+        hass.data[DATA_EVOHOME]['scanInterval']
+    )
 
 # Do we perform only an update, or a full refresh (incl. OAuth access token)?
     if True:  ## always a full refresh in setup()
         _LOGGER.info("Authenticating for first OAuth token")
         try:  ## client._login() is called by client.__init__()
             _LOGGER.info("Calling client v2 API [4 request(s)]: client.__init__()...")
-            ec_api = EvohomeClient(username, password, debug=False)
+            ec_api = EvohomeClient(username, password, debug=True)
         except:
             _LOGGER.error("Failed to connect to the Honeywell web API!")
             raise
@@ -174,11 +179,12 @@ def _updateStateData(evo_client, domain_data, force_refresh = False):
         domain_data['evohomeClient'] = evo_client
 
 # OAuth tokens need periodic refresh, but the client exposes no api for that
-        timeout = datetime.now() + timedelta(seconds = _OAUTH_TIMEOUT_SECONDS)
+        timeout = datetime.now() + timedelta(seconds \
+            = _OAUTH_TIMEOUT_SECONDS - domain_data['scanInterval'])
 
         domain_data['tokenExpires'] = timeout
 
-        _LOGGER.info("OAuth token expires at %s", timeout)
+        _LOGGER.info("OAuth token expires shortly after %s", timeout)
 
 # These are usually updated once per authentication cycle...
         domain_data['installation'] \
@@ -248,7 +254,7 @@ def _returnTempsAndModes(client, force_update = False):
 
     _LOGGER.debug("ec2_api.status() = %s", ec2_status)
 
-    if True:
+    if False:
         try:
             _LOGGER.debug("Using client v1 API (for higher precision temps)")
 
@@ -334,7 +340,8 @@ class evoEntity(Entity):
         if dataSource == 'config':
             _zones = self.hass.data[DATA_EVOHOME]['installation'] \
                 ['gateways'][0]['temperatureControlSystems'][0]['zones']
-        if dataSource == 'status':
+
+        else:  ## if dataSource == 'status':
             _zones = self.hass.data[DATA_EVOHOME]['status']['zones']
 
         for _zone in _zones:
@@ -509,29 +516,30 @@ class evoControllerEntity(evoEntity):
                 "Calling client API: controller.set_status_%s())...",
                 operation_mode
             )
-            _AUTOWITHRESET = 5
-            _LOGGER.info("Calling client v2 API [?x]: controller._set_status()...")
+#           _AUTOWITHRESET = 5
+            _LOGGER.info("Calling client v2 API [1 request(s)]: controller._set_status()...")
+## BUG: fixed by https://github.com/watchforstock/evohome-client/pull/44
 #           self.client._get_single_heating_system._set_status(_AUTOWITHRESET)
-            self.client.locations[0]._gateways[0]._control_systems[0]._set_status(_AUTOWITHRESET)
+            self.client.locations[0]._gateways[0]._control_systems[0]._set_status("AutoWithReset")
 
         else:
             self._current_operation = operation_mode
-# There is no EvohomeClient.set_status_reset exposed via the client v2 API (<=2.6), so
-# we're using EvohomeClient...ControlSystem._set_status(5) instead.
+# There is no EvohomeClient.set_status_reset via the client v2 API (<=2.6), so
+# we're using EvohomeClient...ControlSystem._set_status(5) (see above) instead.
             functions = {
-#               EVO_AUTORESET: self.client.locations[0]._gateways[0]._control_systems[0]._set_status(5),
-                EVO_AUTO:    self.client.set_status_normal,
-                EVO_AUTOECO: self.client.set_status_eco,
-                EVO_DAYOFF:  self.client.set_status_dayoff,
-                EVO_AWAY:    self.client.set_status_away,
-                EVO_HEATOFF: self.client.set_status_heatingoff,
-                EVO_CUSTOM:  self.client.set_status_custom,
+#               EVO_AUTORESET: self.client.set_status_reset,
+                EVO_AUTO:      self.client.set_status_normal,
+                EVO_AUTOECO:   self.client.set_status_eco,
+                EVO_DAYOFF:    self.client.set_status_dayoff,
+                EVO_AWAY:      self.client.set_status_away,
+                EVO_HEATOFF:   self.client.set_status_heatingoff,
+                EVO_CUSTOM:    self.client.set_status_custom,
             }
 
 # before calling func(), should check OAuth token still viable, but how?
             func = functions[operation_mode]
             _LOGGER.info(
-                "Calling client API: controller.set_status_%s())...",
+                "Calling client v2 API [1 request(s)]: controller._set_status_%s()...",
                 operation_mode
             )
             func()
@@ -630,10 +638,11 @@ class evoControllerEntity(evoEntity):
         Get the latest schedule of the controller every hour."""
 #       _LOGGER.info("update(Controller=%s)", self._id)
 
-## wait a minimum of 2 mins between updates
+## wait a minimum of scan_interval between updates
         _lastUpdated = self.hass.data[DATA_EVOHOME]['lastUpdated']
 
-        if datetime.now() < _lastUpdated + timedelta(seconds = 115):
+        if datetime.now() < _lastUpdated \
+            + timedelta(seconds = self.hass.data[DATA_EVOHOME]['scanInterval']):
             return
 
         _LOGGER.info("update(Controller=%s)", self._id)
@@ -967,9 +976,13 @@ class evoZoneEntity(evoEntity, ClimateDevice):
     @property
     def current_temperature(self):
         """Return the current temperature."""
-        _temp = self._getZoneById(self._id, 'status') \
-            ['temperatureStatus']['temperature']
-        _LOGGER.info("current_temperature(Zone=%s) = %s", self._id + " [" + self._name + "]", _temp)
+        _zone = self._getZoneById(self._id, 'status')
+        if _zone['temperatureStatus']['isAvailable']:
+            _temp = _zone['temperatureStatus']['temperature']
+            _LOGGER.info("current_temperature(Zone=%s) = %s", self._id + " [" + self._name + "]", _temp)
+        else:
+            _LOGGER.warn("current_temperature(Zone=%s) - Zone is unavailable", self._id + " [" + self._name + "]")
+            _temp = None
         return _temp
 
 
