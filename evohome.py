@@ -80,11 +80,12 @@ from homeassistant.const import (
 #  https://github.com/home-assistant/home-assistant.github.io/pull/5199
 
 ## these vars for >=0.2.6 (is it v3 of the api?)
-REQUIREMENTS = ['https://github.com/zxdavb/evohome-client/archive/dev.zip#evohomeclient==0.2.20']
+REQUIREMENTS = ['https://github.com/zxdavb/evohome-client/archive/auto-renew.zip#evohomeclient==0.2.20']
+#REQUIREMENTS = ['https://github.com/zxdavb/evohome-client/archive/dev.zip#evohomeclient==0.2.20']
 _SETPOINT_CAPABILITIES = 'setpointCapabilities'
 _SETPOINT_STATUS       = 'setpointStatus'
 _TARGET_TEMPERATURE    = 'targetHeatTemperature'
-_OAUTH_TIMEOUT_SECONDS = 1800  ## timeout is 30 mins
+_OAUTH_TIMEOUT_SECONDS = 18000  ## timeout is 30 mins
 
 ## these vars for <=0.2.5...
 #REQUIREMENTS = ['evohomeclient==0.2.5']
@@ -165,7 +166,7 @@ def setup(hass, config):
             raise
 
     _updateStateData(ec_api, hass.data[DATA_EVOHOME], True)
-
+    _LOGGER.info("Access token expires: %s", ec_api.access_token_expires)
 ## Load platforms...
     load_platform(hass, 'climate', DOMAIN)
 
@@ -254,7 +255,7 @@ def _returnTempsAndModes(client, force_update = False):
 
     _LOGGER.debug("ec2_api.status() = %s", ec2_status)
 
-    if False:
+    if True:
         try:
             _LOGGER.debug("Using client v1 API (for higher precision temps)")
 
@@ -403,7 +404,7 @@ class evoControllerEntity(evoEntity):
     def should_poll(self):
         """Controller should TBA. The controller will provide the state data."""
         _poll = True
-        _LOGGER.info("ZX should_poll(Controller=%s): %s", self._id, _poll)
+        _LOGGER.info("should_poll(Controller=%s): %s", self._id, _poll)
         return _poll
 
 
@@ -411,14 +412,14 @@ class evoControllerEntity(evoEntity):
     def force_update(self):
         """Controllers should update when state date is updated, even if it is unchanged."""
         _force = True
-        _LOGGER.info("ZX force_update(Controller=%s): %s", self._id,  _force)
+        _LOGGER.info("force_update(Controller=%s): %s", self._id,  _force)
         return _force
 
 
     @property
     def name(self):
         """Get the name of the controller."""
-        _LOGGER.info("name(Controller=%s)", self._id)
+        _LOGGER.debug("name(Controller=%s)", self._id)
         return "_" + self.hass.data[DATA_EVOHOME]['installation'] \
             ['locationInfo']['name']
 
@@ -426,7 +427,7 @@ class evoControllerEntity(evoEntity):
     @property
     def icon(self):
         """Return the icon to use in the frontend UI."""
-        _LOGGER.info("icon(Controller=%s)", self._id)
+        _LOGGER.debug("icon(Controller=%s)", self._id)
         return "mdi:thermostat"
 
 
@@ -463,8 +464,6 @@ class evoControllerEntity(evoEntity):
     @property
     def operation_list(self):
         """Return the list of available operation modes."""
-        _LOGGER.info("operation_list(Controller=%s)", self._id)
-
         _oplist = []
         for mode in self.hass.data[DATA_EVOHOME]['installation'] \
             ['gateways'][0]['temperatureControlSystems'][0]['allowedSystemModes']:
@@ -718,10 +717,10 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 
 
     @property
-    def should_poll(self): #   OR: def poll(self):
+    def should_poll(self):
         """Zones should not be polled?, the controller will maintain state data."""
         _poll = True
-        _LOGGER.info("ZX should_poll(Zone=%s): %s", self._id, _poll)
+        _LOGGER.info("should_poll(Zone=%s) = %s", self._id, _poll)
         return _poll
 
 
@@ -729,24 +728,8 @@ class evoZoneEntity(evoEntity, ClimateDevice):
     def force_update(self):
         """Zones should TBA."""
         _force = False
-        _LOGGER.info("ZX force_update(Zone=%s): %s", self._id, _force)
+        _LOGGER.info("force_update(Zone=%s) = %s", self._id, _force)
         return _force
-
-
-    @property
-    def name(self):
-        """Get the name of the zone."""
-        _name = self._getZoneById(self._id, 'config')['name']
-        _LOGGER.info("name(Zone=%s) = %s", self._id + " [" + self._name + "]", _name)
-        return _name
-
-
-    @property
-    def icon(self):
-        """Return the icon to use in the frontend UI."""
-        _icon = "mdi:radiator"
-        _LOGGER.info("icon(Zone=%s) = %s", self._id + " [" + self._name + "]", _icon)
-        return _icon
 
 
     @property
@@ -899,27 +882,27 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 
 
     @property
+    def name(self):
+        """Get the name of the zone."""
+        _name = self._getZoneById(self._id, 'config')['name']
+        _LOGGER.debug("name(Zone=%s) = %s", self._id, _name)
+        return _name
+
+
+    @property
+    def icon(self):
+        """Return the icon to use in the frontend UI."""
+        _icon = "mdi:radiator"
+        _LOGGER.debug("icon(Zone=%s) = %s", self._id , _icon)
+        return _icon
+
+
+    @property
     def supported_features(self):
         """Get the list of supported features of the zone."""
         _feats = SUPPORT_TARGET_TEMPERATURE | SUPPORT_OPERATION_MODE
         _LOGGER.info("supported_features(Zone=%s) = %s", self._id, _feats)
         return _feats
-
-
-    @property
-    def precision(self):
-        """Return the precision of the system."""
-#       if not ?using v1 API? == TEMP_CELSIUS:
-#           return PRECISION_HALVES
-        _LOGGER.info("precision(Zone=%s) = %s", self._id, PRECISION_TENTHS)
-        return PRECISION_TENTHS
-
-
-    @property
-    def temperature_unit(self):
-        """Get the unit of measurement of the controller."""
-        _LOGGER.info("temperature_unit(Zone=%s) = %s", self._id, TEMP_CELSIUS)
-        return TEMP_CELSIUS
 
 
     def set_temperature(self, **kwargs):
@@ -953,7 +936,7 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 
         _until = kwargs.get(ATTR_UNTIL)
 #       _until = None  ## TBA
-        _LOGGER.info("ZX Calling API: zone.set_temperature(temp=%s, until=%s)...", _temperature, _until)
+        _LOGGER.info("Calling API: zone.set_temperature(temp=%s, until=%s)...", _temperature, _until)
 
 #       zone = self.client._get_single_heating_system.zones[self._name]
         zone = self.client.locations[0]._gateways[0]._control_systems[0].zones[self._name]
@@ -987,6 +970,42 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 
 
     @property
+    def temperature_unit(self):
+        """Get the unit of measurement of the controller."""
+        _LOGGER.debug("temperature_unit(Zone=%s) = %s", self._id, TEMP_CELSIUS)
+        return TEMP_CELSIUS
+
+
+    @property
+    def precision(self):
+        """Return the precision of the system."""
+#       if not ?using v1 API? == TEMP_CELSIUS:
+#           return PRECISION_HALVES
+        _LOGGER.debug("precision(Zone=%s) = %s", self._id, PRECISION_TENTHS)
+        return PRECISION_TENTHS
+
+
+    @property
+    def min_temp(self):
+        """Return the minimum setpoint temperature.  Setpoints are 5-35C by
+           default, but zones can be configured inside these values."""
+        _temp = self._getZoneById(self._id, 'config') \
+            [_SETPOINT_CAPABILITIES]['minHeatSetpoint']
+        _LOGGER.debug("min_temp(Zone=%s) = %s", self._id, _temp)
+        return _temp
+
+
+    @property
+    def max_temp(self):
+        """Return the maximum setpoint temperature.  Setpoints are 5-35C by
+           default, but zones can be configured inside these values."""
+        _temp = self._getZoneById(self._id, 'config') \
+            [_SETPOINT_CAPABILITIES]['maxHeatSetpoint']
+        _LOGGER.debug("max_temp(Zone=%s) = %s", self._id, _temp)
+        return _temp
+
+
+    @property
     def target_temperature(self):
         """Return the temperature we try to reach."""
         _temp = self._getZoneById(self._id, 'status') \
@@ -998,30 +1017,11 @@ class evoZoneEntity(evoEntity, ClimateDevice):
     @property
     def target_temperature_step(self):
         """Return the supported step of target temperature."""
-        _LOGGER.info("target_temperature_step(Zone=%s)", self._id)
-#       return PRECISION_HALVES
-        return self._getZoneById(self._id, 'config') \
+        _step = self._getZoneById(self._id, 'config') \
             [_SETPOINT_CAPABILITIES]['valueResolution']
-
-
-    @property
-    def min_temp(self):
-        """Return the minimum setpoint temperature.  Setpoints are 5-35C by
-           default, but zones can be configured inside these values."""
-        _temp = self._getZoneById(self._id, 'config') \
-            [_SETPOINT_CAPABILITIES]['minHeatSetpoint']
-        _LOGGER.info("min_temp(Zone=%s) = %s", self._id, _temp)
-        return _temp
-
-
-    @property
-    def max_temp(self):
-        """Return the maximum setpoint temperature.  Setpoints are 5-35C by
-           default, but zones can be configured inside these values."""
-        _temp = self._getZoneById(self._id, 'config') \
-            [_SETPOINT_CAPABILITIES]['maxHeatSetpoint']
-        _LOGGER.info("max_temp(Zone=%s) = %s", self._id, _temp)
-        return _temp
+        _LOGGER.debug("target_temperature_step(Zone=%s) = %s", self._id, _step)
+#       return PRECISION_HALVES
+        return _step
 
 
 
