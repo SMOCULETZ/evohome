@@ -355,20 +355,31 @@ class evoEntity(Entity):
         raise KeyError("Zone ID '%s' not found in dataSource", zoneId)
 
 
-    def _getZoneSchedTemp(self, zoneId, timeOfDay=None, dayOfWeek=None):
-        _sched = self._getZoneById(zoneId, 'schedule')['schedule']
-        for _day in _sched:
-            if _sched['DayOfWeek'] == dayOfWeek:
-                _oldSetPoint = "00:00:00"
-                for _newSetPoint in ['Switchpoints']:
-                    if timeOfDay >= _oldSetPoint \
-                        and timeOfDay <= _newSetPoint['TimeOfDay']:
-                        _temp = _newSetPoint['heatSetpoint']
+    def _getZoneSchedTemp(self, zoneId, dt=None):
+    
+        if dt is None: dt = datetime.now()
+        _dayOfWeek = int(dt.strftime('%w'))  ## 0 is Sunday
+        _timeOfDay = dt.strftime('%H:%M:%S')
+            
+        _sched = self._getZoneById(zoneId, 'schedule')
+
+# start with the last setpoint of yesterday
+        for _day in _sched['schedule']['DailySchedules']:
+            if _day['DayOfWeek'] == (_dayOfWeek + 6) % 7:
+                for _switchPoint in _day['Switchpoints']:
+                    if True:
+                        _setPoint = _switchPoint['heatSetpoint']
+
+# walk through all of todays setpoints...
+        for _day in _sched['schedule']['DailySchedules']:
+            if _day['DayOfWeek'] == _dayOfWeek:
+                for _switchPoint in _day['Switchpoints']:
+                    if _timeOfDay < _switchPoint['TimeOfDay']:
+                        _setPoint = _switchPoint['heatSetpoint']
+                    else:
                         break
-                    _oldSetPoint = _newSetPoint['heatSetpoint']
-                break
-    # TBA
-        return False  ## _setPoint
+
+        return _setPoint
 
 
 
@@ -600,7 +611,7 @@ class evoControllerEntity(evoEntity):
                         = EVO_FOLLOW
                 if _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW:
                     _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
-                        = 99  ## sched_temp
+                        = self._getZoneSchedTemp(_zone['zoneId'], datetime.now())
             
         elif operation_mode == EVO_AUTO:
             # set target temp according to schedule
@@ -610,7 +621,7 @@ class evoControllerEntity(evoEntity):
                         = EVO_FOLLOW
                 if _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW:
                     _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
-                        = 99  ## sched_temp
+                        = self._getZoneSchedTemp(_zone['zoneId'], datetime.now())
 
         elif operation_mode == EVO_AUTOECO:
             # set target temp according to schedule, but less 3
@@ -620,7 +631,7 @@ class evoControllerEntity(evoEntity):
                         = EVO_FOLLOW
                 if _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW:
                     _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
-                        = 99 - 3  ## sched_temp - 3
+                        = self._getZoneSchedTemp(_zone['zoneId'], datetime.now()) - 3
             
         elif operation_mode == EVO_DAYOFF:
             # set target temp according to schedule, but for Saturday
@@ -630,7 +641,7 @@ class evoControllerEntity(evoEntity):
                         = EVO_FOLLOW
                 if _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW:
                     _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
-                        = 99  ## sched_temp for Saturday
+                        = self._getZoneSchedTemp(_zone['zoneId'], datetime.now())
                     _LOGGER.info(
                         " -updating Zone sched_temp is '%s'", 
                         self._getZoneById(_zone['zoneId'], 'schedule')
