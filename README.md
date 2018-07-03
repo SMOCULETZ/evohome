@@ -18,9 +18,9 @@ The `configuration.yaml` is as below (note `evohome:` rather than `climate:` & `
 evohome:
   username: !secret evohome_username
   password: !secret evohome_password
-  scan_interval: 180   # seconds, rounded up to nearest minute, minimum is 60
-  high_precision: true # use additional api calls for PRECISION_TENTHS rather than PRECISION_HALVES
-  use_schedules: false # long story...
+# scan_interval: 180   # seconds, rounded up to nearest minute, minimum is 60
+# high_precision: true # use additional api calls for PRECISION_TENTHS rather than PRECISION_HALVES
+# use_schedules: false # long story, slower initialisation & other downsodes...
 
 ```
 
