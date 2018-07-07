@@ -10,26 +10,27 @@ evohome:
   password: !secret_evohome_password
   scan_interval: 300
 """
-# regarding: https://developers.home-assistant.io/docs/en/development_index.html
+
+# TBD
+# re: https://developers.home-assistant.io/docs/en/development_index.html
 #  - checked with: flake8 --ignore=E303,E241 --max-line-length=150 evohome.py
 
-
-
-import logging
-import socket
-import sched
 import functools as ft
+import logging
+import requests
+import sched
+import socket
+import voluptuous as vol
+
 
 from datetime import datetime, timedelta
 from time import sleep, strftime, strptime, mktime
 
-import requests
-import voluptuous as vol
-
-from homeassistant.core              import callback
-from homeassistant.helpers.discovery import load_platform
-from homeassistant.helpers.entity    import Entity
-from homeassistant.helpers.event     import track_state_change
+from homeassistant.core                import callback
+from homeassistant.helpers.discovery   import load_platform
+from homeassistant.helpers.temperature import display_temp as show_temp
+from homeassistant.helpers.entity      import Entity
+from homeassistant.helpers.event       import track_state_change
 
 import homeassistant.helpers.config_validation as cv
 # from homeassistant.helpers.config_validation import PLATFORM_SCHEMA  # noqa
@@ -42,23 +43,22 @@ from homeassistant.components.climate import (
 #   SERVICE_SET_AWAY_MODE = 'set_away_mode'
 
     SUPPORT_TARGET_TEMPERATURE,
-#   SUPPORT_TARGET_TEMPERATURE_HIGH,
-#   SUPPORT_TARGET_TEMPERATURE_LOW,
     SUPPORT_OPERATION_MODE,
-#   SUPPORT_AWAY_MODE,
+    SUPPORT_AWAY_MODE,
+    SUPPORT_ON_OFF,
 
 #   ATTR_CURRENT_TEMPERATURE = 'current_temperature'
+    ATTR_CURRENT_TEMPERATURE,
 #   ATTR_MAX_TEMP = 'max_temp'
 #   ATTR_MIN_TEMP = 'min_temp'
-#   ATTR_TARGET_TEMP_HIGH = 'target_temp_high'
-#   ATTR_TARGET_TEMP_LOW = 'target_temp_low'
 #   ATTR_TARGET_TEMP_STEP = 'target_temp_step'
 #   ATTR_OPERATION_MODE = 'operation_mode'
     ATTR_OPERATION_MODE,
 #   ATTR_OPERATION_LIST = 'operation_list'
     ATTR_OPERATION_LIST,
 #   ATTR_AWAY_MODE = 'away_mode'
-    )
+    ATTR_AWAY_MODE,
+)
 
 ATTR_UNTIL='until'
 
@@ -72,21 +72,23 @@ from homeassistant.const import (
 #   ATTR_TEMPERATURE = 'temperature'
     ATTR_TEMPERATURE,
 
-    )
+)
 
+# these are specific to this component
 CONF_HIGH_PRECISION = 'high_precision'
 CONF_USE_SCHEDULES = 'use_schedules'
 
-## https://www.home-assistant.io/developers/component_deps_and_reqs/
-#  https://github.com/home-assistant/home-assistant.github.io/pull/5199
+## TBD: for testing only (has extra logging)
+# https://www.home-assistant.io/developers/component_deps_and_reqs/
+# https://github.com/home-assistant/home-assistant.github.io/pull/5199
 
-## these vars for >=0.2.6 (is it v3 of the api?)
-#REQUIREMENTS = ['https://github.com/zxdavb/evohome-client/archive/master.zip#evohomeclient==0.2.7']
-REQUIREMENTS = ['https://github.com/zxdavb/evohome-client/archive/logging.zip#evohomeclient==0.2.7']
+##TBD: these vars for >=0.2.6 (is it v3 of the api?)
+#REQUIREMENTS = ['https://github.com/zxdavb/evohome-client/archive/master.zip#evohomeclient==0.2.7'] # noqa
+REQUIREMENTS = ['https://github.com/zxdavb/evohome-client/archive/logging.zip#evohomeclient==0.2.7'] # noqa
 _SETPOINT_CAPABILITIES = 'setpointCapabilities'
 _SETPOINT_STATUS       = 'setpointStatus'
 _TARGET_TEMPERATURE    = 'targetHeatTemperature'
-_OAUTH_TIMEOUT_SECONDS = 18000  ## timeout is 30 mins, but client handles that...
+_OAUTH_TIMEOUT_SECONDS = 21600  ## TBA: timeout is 6h, client handles oauth
 
 ## these vars for <=0.2.5...
 #REQUIREMENTS = ['evohomeclient==0.2.5']
@@ -132,7 +134,7 @@ EVO_FROSTMODE  = 'FrostProtect'
 
 
 def setup(hass, config):
-    """Set up a Honeywell evoTouch heating system (1 controller and multiple zones)."""
+    """Set up a Honeywell evoTouch heating system (1 controller and multiple zones).""" # noqa
     _LOGGER.info("setup(), temp units: %s...", TEMP_CELSIUS)
 
 # Use the evohome-client v2 API (which uses OAuth)
@@ -140,42 +142,47 @@ def setup(hass, config):
 
 ## TBA: Need to add code to exclude US-based systems...
 
-## Establish a connection with the Honeywell api via the client...
-    username = config[DOMAIN][CONF_USERNAME]  # config.get(CONF_USERNAME) doesn't work
+# get the parameters, note that config.get(CONF_USERNAME) doesn't work
+    username = config[DOMAIN][CONF_USERNAME]
     password = config[DOMAIN][CONF_PASSWORD]
 
 ### Get the timeouts from the configuration. Use DEFAULTs is not provided
-#   timeout_short = config[DOMAIN].get(CONF_TIMEOUT_SHORT, DEFAULT_TIMEOUT_SHORT)
-#   timeout_long = config[DOMAIN].get(CONF_TIMEOUT_LONG, DEFAULT_TIMEOUT_LONG)
+# timeout_short = config[DOMAIN].get(CONF_TIMEOUT_SHORT, DEFAULT_TIMEOUT_SHORT)
+# timeout_long = config[DOMAIN].get(CONF_TIMEOUT_LONG, DEFAULT_TIMEOUT_LONG)
 
-    hass.data[DATA_EVOHOME] = {}  ## without this, KeyError: 'data_evohome'
-    
+    hass.data[DATA_EVOHOME] = {}  # without this, KeyError: 'data_evohome'
+
+# scan_interval is rounded up to nearest minute
     hass.data[DATA_EVOHOME][CONF_SCAN_INTERVAL] \
-        = (int(config[DOMAIN][CONF_SCAN_INTERVAL] / 60) + 1) * 60  ## rounded up to nearest minute
+        = (int(config[DOMAIN][CONF_SCAN_INTERVAL] / 60) + 1) * 60
     hass.data[DATA_EVOHOME][CONF_USE_SCHEDULES] \
         =  config[DOMAIN][CONF_USE_SCHEDULES]
     hass.data[DATA_EVOHOME][CONF_HIGH_PRECISION] \
         = config[DOMAIN][CONF_HIGH_PRECISION]
-        
+
     _LOGGER.debug(
         "Scan interval is %s secs, Use schedules: %s, High precision: %s",
         hass.data[DATA_EVOHOME][CONF_SCAN_INTERVAL],
         hass.data[DATA_EVOHOME][CONF_USE_SCHEDULES],
         hass.data[DATA_EVOHOME][CONF_HIGH_PRECISION],
-        )
+    )
 
 # Do we perform only an update, or a full refresh (incl. OAuth access token)?
-    if True:  ## always a full refresh in setup()
-        _LOGGER.info("Authenticating for first OAuth token")
-        try:  ## client._login() is called by client.__init__()
-            _LOGGER.info("Calling client v2 API [4 request(s)]: client.__init__()...")
-            ec_api = EvohomeClient(username, password, debug=False)
-        except:
-            _LOGGER.error("Failed to connect to the Honeywell web API!")
-            raise
+    _LOGGER.debug("Connecting to the client (Honeywell web) API...")
+    try:  ## client._login() is called by client.__init__()
+        _LOGGER.info("Calling v2 API [4 request(s)]: client.__init__()...")
+        ec_api = EvohomeClient(username, password, debug=False)
+    except:
+        _LOGGER.error("Failed to connect to the client (Honeywell web) API!")
+        raise
+    _LOGGER.debug("Connect OK to the client (Honeywell web) API.")
 
-    _updateStateData(ec_api, hass.data[DATA_EVOHOME], True)
-#   _LOGGER.info("Access token expires: %s", ec_api.access_token_expires) only for latest ver of ec
+# The latest evohomeclient uses: requests.exceptions.HTTPError, including:
+# - 400 Client Error: Bad Request for url:      [ Bad credentials ]
+# - 429 Client Error: Too Many Requests for url [ Limit exceeded ]
+
+    _updateStateData(ec_api, hass.data[DATA_EVOHOME], force_refresh=True)
+
 ## Load platforms...
     load_platform(hass, 'climate', DOMAIN)
 
@@ -183,7 +190,7 @@ def setup(hass, config):
     return True
 
 
-def _updateStateData(evo_client, domain_data, force_refresh = False):
+def _updateStateData(evo_client, domain_data, force_refresh=False):
 
     if force_refresh is True:
         domain_data['evohomeClient'] = evo_client
@@ -200,7 +207,7 @@ def _updateStateData(evo_client, domain_data, force_refresh = False):
         if True:
             domain_data['installation'] \
                 = _returnConfiguration(evo_client)
-        if domain_data[CONF_USE_SCHEDULES] is True: 
+        if domain_data[CONF_USE_SCHEDULES] is True:
             domain_data['schedule'] \
                 = _returnZoneSchedules(evo_client)
 #       domain_data['lastRefreshed'] \
@@ -214,7 +221,7 @@ def _updateStateData(evo_client, domain_data, force_refresh = False):
         else:
             domain_data['status'] \
                 = _returnTempsAndModes(evo_client, high_precision=False)
-        
+
     domain_data['lastUpdated'] = datetime.now()
 
 # Some of this data should be redacted before getting into the logs
@@ -230,22 +237,20 @@ def _updateStateData(evo_client, domain_data, force_refresh = False):
 
 
 def _returnConfiguration(client, force_update=False):
-## client.installation_info[0] is more efficient than client.fullInstallation()
     _LOGGER.info(
         "_returnConfiguration(client, force_update=%s)",
         force_update
-        )
+    )
 
-    if force_update is True: # BUG: or client.installation_info = Null
+# BUG?: or client.installation_info is Null
+    if force_update is True:
         _LOGGER.info(
-            "Calling client v2 API [? request(s)]: client.installation()..."
-            )
-        client.installation()           # this will cause a new call, and...
-
-    _LOGGER.info(
-        "Calling client v2 API [0 request(s)]: client.installation_info[0]..."
+            "Calling v2 API [? request(s)]: client.installation()..."
         )
-    _conf = client.installation_info[0] # this attribute is updated by that call
+        client.installation()
+
+# client.installation_info[0] is more efficient than client.fullInstallation()
+    _conf = client.installation_info[0]
 
 # Now redact unneeded info
     _conf['locationInfo']['locationId'] = 'REDACTED'
@@ -260,9 +265,9 @@ def _returnConfiguration(client, force_update=False):
     _conf['gateways'][0]['gatewayInfo']['gatewayId'] = 'REDACTED'
     _conf['gateways'][0]['gatewayInfo']['mac'] = 'REDACTED'
     _conf['gateways'][0]['gatewayInfo']['crc'] = 'REDACTED'
-    
-    
-### ZX Hack for DHW...
+
+
+### ZX Hack for testing DHW...
     if False:
         _conf['gateways'][0]['temperatureControlSystems'][0]['dhw'] = \
             { \
@@ -281,21 +286,21 @@ def _returnConfiguration(client, force_update=False):
                     "timingResolution": "00:10:00" } }
 #       _LOGGER.debug("ZX _returnConfiguration() = %s", _conf)
 ### ZX Hack ends.
-    
+
     return _conf
 
 
-def _returnTempsAndModes(client, force_update = False, high_precision = False):
+def _returnTempsAndModes(client, force_update=False, high_precision=False):
 ## Get the latest modes/temps (assumes only 1 location/controller)
     _LOGGER.info("_returnTempsAndModes(client)")
 
 #   if force_update is True:
-#        _LOGGER.info("Calling client v2 API [?x]: client.installation()...")
+#        _LOGGER.info("Calling v2 API [?x]: client.installation()...")
 #       hass.data[DATA_EVOHOME]['installation'] = client.installation()
 
     _LOGGER.info(
-        "Calling client v2 API [1 request(s)]: client.locations[0].status()..."
-        )
+        "Calling v2 API [1 request(s)]: client.locations[0].status()..."
+    )
     ec2_status = client.locations[0].status()  # get latest modes/temps
     ec2_tcs = ec2_status['gateways'][0]['temperatureControlSystems'][0]
 
@@ -308,10 +313,8 @@ def _returnTempsAndModes(client, force_update = False, high_precision = False):
             from evohomeclient import EvohomeClient as EvohomeClientVer1  ## uses v1 of the api
             ec1_api = EvohomeClientVer1(client.username, client.password)
 
-            _LOGGER.info("Calling client v1 API [2 requests]: client.temperatures(force_refresh = True)...")
-# is: _populate_user_info [1x] & _populate_full_data() [1x], if request limit exceeded:
-# requests.exceptions.HTTPError: 429 Client Error: Too Many Requests for url: https://tccna.honeywell.com/WebAPI/api/Session
-            ec1_temps = ec1_api.temperatures(force_refresh = True)  # is a generator?
+            _LOGGER.info("Calling v1 API [2 requests]: client.temperatures()...")
+            ec1_temps = ec1_api.temperatures(force_refresh=True)  # is a generator?
             _LOGGER.debug("ev_api.temperatures() = %s", ec1_temps)
 
             for temp in ec1_temps:
@@ -339,10 +342,10 @@ def _returnTempsAndModes(client, force_update = False, high_precision = False):
     if _LOGGER.isEnabledFor(logging.DEBUG):
         for zone in ec2_tcs['zones']:
             _LOGGER.debug("update(controller) - for child %s (%s), temp = %s.", zone['zoneId'], zone['name'], zone['temperatureStatus']['temperature'])
-            
-            
+
+
 ### ZX Hack for DHW...
-    if False: 
+    if False:
         ec2_tcs['dhw'] = \
             { \
                 "dhwId": "999999", \
@@ -366,26 +369,28 @@ def _returnZoneSchedules(client):
     schedules = {}
 
 ## Collect each (slave) zone as a (climate component) device
-    for z in client._get_single_heating_system()._zones:
-        _LOGGER.info("Calling client v2 API [1 request(s)]: client.zone.schedule(%s)...", z.zoneId)
+## This line requires only 1 location/controller, the next works for 1+
+#   for z in client._get_single_heating_system()._zones:
+    for z in client.locations[0]._gateways[0]._control_systems[0]._zones:
+        _LOGGER.info("Calling v2 API [1 request(s)]: client.zone.schedule(%s)...", z.zoneId)
         s = z.schedule()
         schedules[z.zoneId] = {'name': z.name, 'schedule': s}
 #       zone_type = temperatureZone, or domesticHotWater
-        _LOGGER.info(" - zoneId = %s, zone_type = %s", 
+        _LOGGER.info(" - zoneId = %s, zone_type = %s",
             z.zoneId,
             z.zone_type
-            )
+        )
 
     _LOGGER.info(
         "_returnZoneSchedules() = %s",
         schedules
-        )
+    )
 
     return schedules  # client.zone_schedules_backup()
 
 
 class evoEntity(Entity):
-    """Honeywell evohome Entity base."""
+    """Base for Honeywell evohome Entities."""
 
     def __init__(self, hass, client, device=None):
         """Initialize the evoEntity."""
@@ -394,6 +399,35 @@ class evoEntity(Entity):
 
         return None  ## should return None
 
+
+    @callback
+    def _connect(self, packet):
+        """Process a dispatcher connect."""
+        _LOGGER.info(
+            "%s has received a '%s' packet from %s",
+            self._id + " [" + self.name() + "]",
+            packet['signal'],
+            packet['sender']
+        )
+
+        if packet['signal'] == 'update':
+            _LOGGER.info(
+                "%s is calling schedule_update_ha_state(force_refresh=True)...",
+                self._id + " [" + self.name() + "]"
+            )
+#           self.update()
+            self.async_schedule_update_ha_state(force_refresh=True)
+            self._assumed_state = False
+
+        if packet['signal'] == 'assume':
+            # _LOGGER.info(
+                # "%s is calling schedule_update_ha_state(force_refresh=False)...",
+                # self._id + " [" + self.name() + "]"
+            # )
+            self._assumed_state = True
+            self.async_schedule_update_ha_state(force_refresh=False)
+
+        return None
 
 
     def _getZoneById(self, zoneId, dataSource='status'):
@@ -418,7 +452,6 @@ class evoEntity(Entity):
                 return _zone
     # or should this be an IndexError?
         raise KeyError("Zone ID '%s' not found in dataSource", zoneId)
-
 
 
     def _getZoneSchedTemp(self, zoneId, dt=None):
@@ -450,13 +483,14 @@ class evoEntity(Entity):
 
 
 class evoControllerEntity(evoEntity):
-    """Honeywell evohome Controller Entity base."""
+    """Base for a Honeywell evohome Location controller."""
 
     def __init__(self, hass, client, controller):
         """Initialize the evoEntity."""
         super().__init__(hass, client, controller)
 
         self._id = controller['systemId']
+        self._obj = self.client.locations[0]._gateways[0]._control_systems[0]
 #       self._name = "_" + controller['modelType']  # named so is first in list
 
         _LOGGER.info("__init__(Controller=%s)", self._id)
@@ -475,20 +509,18 @@ class evoControllerEntity(evoEntity):
 
         return None
 
-
-
     @callback
     def _connect(self, packet):
         """Process a dispatcher connect."""
         _LOGGER.info(
-            "ZZ Controller has received a '%s' packet from %s",
+            "Controller has received a '%s' packet from %s",
             packet['signal'],
             packet['sender']
         )
 
         if False:
             _LOGGER.info(
-                "ZZ  - Controller is calling self.update()"
+                " - Controller is calling self.update()"
             )
 
             self.update
@@ -496,13 +528,11 @@ class evoControllerEntity(evoEntity):
 
         return None
 
-
     @property
     def should_poll(self):
         """Controller should TBA. The controller will provide the state data."""
         _LOGGER.info("should_poll(Controller=%s) = %s", self._id, self._should_poll)
         return self._should_poll
-
 
     @property
     def force_update(self):
@@ -510,7 +540,6 @@ class evoControllerEntity(evoEntity):
         _force = False
         _LOGGER.info("force_update(Controller=%s) = %s", self._id,  _force)
         return _force
-
 
     @property
     def name(self):
@@ -520,14 +549,12 @@ class evoControllerEntity(evoEntity):
         _LOGGER.debug("name(Controller=%s) = %s", self._id, _name)
         return _name
 
-
     @property
     def icon(self):
         """Return the icon to use in the frontend UI."""
         _icon = "mdi:thermostat"
         _LOGGER.debug("icon(Controller=%s) = %s", self._id, _icon)
         return _icon
-
 
     @property
     def state(self):
@@ -543,7 +570,6 @@ class evoControllerEntity(evoEntity):
             _LOGGER.info("state(Controller=%s) = %s", self._id, _opmode)
             return _opmode
 
-
     @property
     def current_operation(self):
         """Return the operation mode of the controller."""
@@ -553,7 +579,6 @@ class evoControllerEntity(evoEntity):
 
         _LOGGER.info("current_operation(Controller=%s) = %s", self._id, _opmode)
         return _opmode
-
 
     @property
     def operation_list(self):
@@ -596,13 +621,15 @@ class evoControllerEntity(evoEntity):
             self._id,
             operation_mode,
             _opmode
-            )
+        )
 
 # PART 1: call the api & trick the UI
-# client.set_status_reset does not exist in <=0.2.6
+# client.set_status_reset() does not exist only in >0.2.6
         if operation_mode == EVO_RESET:
-            _LOGGER.info("Calling client v2 API [1 request(s)]: controller._set_status()...")
-            self.client._get_single_heating_system()._set_status(EVO_AUTO)
+            _LOGGER.info("Calling v2 API [1 request(s)]: controller._set_status()...")
+## This line requires only 1 location/controller, the next works for 1+
+#           self.client._get_single_heating_system()._set_status(EVO_AUTO)
+            self.client.locations[0]._gateways[0]._control_systems[0]._set_status(EVO_AUTO)
 
             if False:
                 _LOGGER.info(" - updating Zone state data (%s), EVO_RESET")
@@ -616,6 +643,7 @@ class evoControllerEntity(evoEntity):
 #XX           self._current_operation = operation_mode
 # There is no EvohomeClient.set_status_reset via the client v2 API (<=2.6), so
 # we're using EvohomeClient._get_single_heating_system()._set_status(5) instead.
+## This line requires only 1 location/controller, not 1+
             functions = {
 #               EVO_RESET:     self.client.set_status_reset,
                 EVO_AUTO:      self.client.set_status_normal,
@@ -627,12 +655,12 @@ class evoControllerEntity(evoEntity):
             }
 
 # before calling func(), should check OAuth token still viable, but how?
-            func = functions[operation_mode]
+            _func = functions[operation_mode]
             _LOGGER.info(
-                "Calling client v2 API [1 request(s)]: controller._set_status_%s()...",
+                "Calling v2 API [1 request(s)]: controller._set_status_%s()...",
                 operation_mode
-                )
-            func()
+            )
+            _func()
 
 
 ## First, Update the state of the Controller
@@ -723,7 +751,7 @@ class evoControllerEntity(evoEntity):
                     _zone[_SETPOINT_STATUS]['setpointMode'] \
                         = EVO_FOLLOW
             # default target temps for 'Away' is 10C, assume that for now
-                if self.hass.data[DATA_EVOHOME][CONF_USE_SCHEDULES]: 
+                if self.hass.data[DATA_EVOHOME][CONF_USE_SCHEDULES]:
                     _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
                         = 10
 
@@ -733,7 +761,7 @@ class evoControllerEntity(evoEntity):
                     _zone[_SETPOINT_STATUS]['setpointMode'] \
                         = EVO_FOLLOW
             # default target temps for 'HeatingOff' is 5C, assume that for now
-                if self.hass.data[DATA_EVOHOME][CONF_USE_SCHEDULES]: 
+                if self.hass.data[DATA_EVOHOME][CONF_USE_SCHEDULES]:
                     _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
                         = 5
 
@@ -752,7 +780,6 @@ class evoControllerEntity(evoEntity):
         self._should_poll = True
 
         return None
-
 
     @property
     def state_attributes(self):
@@ -786,7 +813,6 @@ class evoControllerEntity(evoEntity):
 #       _LOGGER.info("device_state_attributes(Controller) = %s", _data)
         return _data
 
-
     @property
     def supported_features(self):
         """Get the list of supported features of the controller."""
@@ -814,15 +840,15 @@ class evoControllerEntity(evoEntity):
 
         if datetime.now() < _lastUpdated + timedelta(seconds = _scanInterval):
             _LOGGER.info(
-                "update(Controller=%s) interval timer not expired, exiting", 
+                "update(Controller=%s) interval timer not expired, exiting",
                 self._id
-                )
+            )
             return
 
         _LOGGER.info(
-            "update(Controller=%s) interval timer expired, proceeding...", 
+            "update(Controller=%s) interval timer expired, proceeding...",
             self._id
-            )
+        )
 
 ## TBA: no provision (yet) for DHW
 
@@ -833,14 +859,14 @@ class evoControllerEntity(evoEntity):
         if datetime.now() > timeout:
             _LOGGER.info("Re-Authenticating as OAuth token (deemed) expired %s", timeout)
             try:  ## client._login()
-                _LOGGER.info("Calling client v2 API [4 request(s)]: client._login()...")
+                _LOGGER.info("Calling v2 API [4 request(s)]: client._login()...")
                 self.client.locations = []  ## see: https://github.com/watchforstock/evohome-client/issues/43
                 self.client._login()
             except:
                 _LOGGER.error("Failed to re-connect to the Honeywell web API!")
                 raise
 
-            _updateStateData(self.client, self.hass.data[DATA_EVOHOME], True)
+            _updateStateData(self.client, self.hass.data[DATA_EVOHOME], force_refresh=True)
         else:
             _updateStateData(self.client, self.hass.data[DATA_EVOHOME])
 
@@ -857,13 +883,14 @@ class evoControllerEntity(evoEntity):
 
 
 class evoZoneEntity(evoEntity, ClimateDevice):
-    """Honeywell evohome Zone Entity base."""
+    """Base for a Honeywell evohome Zone."""
 
     def __init__(self, hass, client, zone):
         """Initialize the evoEntity."""
         super().__init__(hass, client, zone)
 
         self._id = zone['zoneId']
+        self._obj = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id[self._id]
         self._name = zone['name']  ## TBA - remove this??
 
         _LOGGER.info("__init__(zone=%s)", self._id + " [" + self._name + "]")
@@ -878,43 +905,11 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 
         return None
 
-
-    @callback
-    def _connect(self, packet):
-        """Process a dispatcher connect."""
-        _LOGGER.info(
-            "ZZ Zone %s has received a '%s' packet from %s",
-            self._id + " [" + self._name + "]",
-            packet['signal'],
-            packet['sender']
-        )
-
-        if packet['signal'] == 'update':
-            _LOGGER.info(
-                "ZZ  - Zone %s is calling schedule_update_ha_state(force_refresh=True)...",
-                self._id + " [" + self._name + "]"
-            )
-#           self.update()
-            self.async_schedule_update_ha_state(force_refresh=True)
-            self._assumed_state = False
-
-        if packet['signal'] == 'assume':
-            # _LOGGER.info(
-                # "ZZ  - Zone %s is calling schedule_update_ha_state(force_refresh=False)...",
-                # self._id + " [" + self._name + "]"
-            # )
-            self._assumed_state = True
-            self.async_schedule_update_ha_state(force_refresh=False)
-
-        return None
-
-
     @property
     def assumed_state(self):
         """Return True if unable to access real state of the entity."""
         _LOGGER.info("assumed_state(Zone=%s) = %s", self._id, self._assumed_state)
         return self._assumed_state
-
 
     @property
     def should_poll(self):
@@ -923,14 +918,12 @@ class evoZoneEntity(evoEntity, ClimateDevice):
         _LOGGER.info("should_poll(Zone=%s) = %s", self._id, _poll)
         return _poll
 
-
     @property
     def force_update(self):
         """Zones should TBA."""
         _force = True
         _LOGGER.info("force_update(Zone=%s) = %s", self._id, _force)
         return _force
-
 
     @property
     def state(self):
@@ -1003,8 +996,6 @@ class evoZoneEntity(evoEntity, ClimateDevice):
         )
         return _state
 
-
-
     @property
     def device_state_attributes(self):
         """Return the optional state attributes."""
@@ -1019,7 +1010,6 @@ class evoZoneEntity(evoEntity, ClimateDevice):
         _LOGGER.info("device_state_attributes(Zone=%s) = %s", self._id + " [" + self._name + "]", _data)
         return _data
 
-
     @property
     def current_operation(self):
         """Return the current operation mode of the zone."""
@@ -1029,15 +1019,29 @@ class evoZoneEntity(evoEntity, ClimateDevice):
         _LOGGER.info("current_operation(Zone=%s) = %s", self._id + " [" + self._name + "]", _opmode)
         return _opmode
 
-
     @property
     def operation_list(self):
-        """Return the list of available operation modes."""
+        """Return the Zone's available operation modes."""
         _oplist = self._getZoneById(self._id, 'config') \
             [_SETPOINT_CAPABILITIES]['allowedSetpointModes']
 
         _LOGGER.info("operation_list(Zone=%s) = %s", self._id + " [" + self._name + "]", _oplist)
         return _oplist
+
+
+    def async_set_operation_mode(self, operation_mode, setpoint=None, until=None):
+        """Set new target operation mode.
+
+        This method must be run in the event loop and returns a coroutine.
+        """
+        _LOGGER.info(
+            "async_set_operation_mode(Zone=%s, OpMode=%s, SetPoint=%s, Until=%s)",
+            self._id + " [" + self._name + "]",
+            operation_mode,
+            setpoint,
+            until
+        )
+        return self.hass.async_add_job(self.set_operation_mode, operation_mode)
 
 
     def set_operation_mode(self, operation_mode, setpoint=None, until=None):
@@ -1053,15 +1057,16 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 
 #      _LOGGER.debug("for Zone=%s: set_operation_mode(operation_mode=%s, setpoint=%s, until=%s)", self._name, operation_mode, setpoint, until)
 
-#       zone = self.client._get_single_heating_system().zones_by_id[self._id])
-        zone = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id[self._id]
+## This line requires only 1 location/controller, the next works for 1+
+#       zone = self.client._get_single_heating_system().zones_by_id([self._id])
+        zone = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id([self._id])
 
         _zone = self._getZoneById(self._id, 'status')
         _target_temperature = _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE]
 #XX     _current_operation  = _zone[_SETPOINT_STATUS]['setpointMode']
 
         if operation_mode == EVO_FOLLOW:
-            _LOGGER.debug("Calling client v2 API [? request(s)]: zone.cancel_temp_override()...",)
+            _LOGGER.debug("Calling v2 API [? request(s)]: zone.cancel_temp_override()...",)
             zone.cancel_temp_override(zone)
             setpoint = self._getZoneSchedTemp(_zone['zoneId'], datetime.now())  ## Throws: KeyError: ("zone '", '3449703', "' not in dataSource")
 
@@ -1070,7 +1075,7 @@ class evoZoneEntity(evoEntity, ClimateDevice):
                 setpoint = _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE]
 
         if operation_mode == EVO_PERMOVER:
-            _LOGGER.debug("Calling client v2 API [? request(s)]: zone.set_temperature(%s)...", setpoint)
+            _LOGGER.debug("Calling v2 API [? request(s)]: zone.set_temperature(%s)...", setpoint)
             zone.set_temperature(setpoint)  ## override target temp indefinitely
 
 # TBA this code is wrong ...
@@ -1078,7 +1083,7 @@ class evoZoneEntity(evoEntity, ClimateDevice):
             if until == None:
 # UTC_OFFSET_TIMEDELTA = datetime.now() - datetime.utcnow()
                 until = datetime.utcnow() + timedelta(1/24) ## use .utcnow() or .now() ??
-            _LOGGER.debug("Calling client v2 API [? request(s)]: zone.set_temperature(%s, %s)...", setpoint, until)
+            _LOGGER.debug("Calling v2 API [? request(s)]: zone.set_temperature(%s, %s)...", setpoint, until)
             zone.set_temperature(setpoint, until)  ## override target temp (for a hour)
 
         _LOGGER.debug("Action completed, updating internal state data...")
@@ -1090,7 +1095,6 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 
         return True
 
-
     @property
     def name(self):
         """Get the name of the zone."""
@@ -1098,14 +1102,12 @@ class evoZoneEntity(evoEntity, ClimateDevice):
         _LOGGER.debug("name(Zone=%s) = %s", self._id, _name)
         return _name
 
-
     @property
     def icon(self):
         """Return the icon to use in the frontend UI."""
         _icon = "mdi:radiator"
-        _LOGGER.debug("icon(Zone=%s) = %s", self._id , _icon)
+        _LOGGER.debug("icon(Zone=%s) = %s", self._id, _icon)
         return _icon
-
 
     @property
     def supported_features(self):
@@ -1148,8 +1150,9 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 #       _until = None  ## TBA
         _LOGGER.info("Calling API: zone.set_temperature(temp=%s, until=%s)...", _temperature, _until)
 
-        zone = self.client._get_single_heating_system().zones[self._name]
-#       zone = self.client.locations[0]._gateways[0]._control_systems[0].zones[self._name]
+## This line requires only 1 location/controller, the next works for 1+
+#       zone = self.client._get_single_heating_system().zones_by_id([self._name])
+        zone = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id([self._id])
         zone.set_temperature(_temperature, _until)
 
 # first update hass.data[DOMAIN]...
@@ -1165,7 +1168,6 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 #       self.schedule_update_ha_state()
         return True
 
-
     @property
     def current_temperature(self):
         """Return the current temperature of the Zone."""
@@ -1173,25 +1175,23 @@ class evoZoneEntity(evoEntity, ClimateDevice):
         if _status['temperatureStatus']['isAvailable']:
             _temp = _status['temperatureStatus']['temperature']
             _LOGGER.info(
-                "current_temperature(Zone=%s) = %s", 
-                self._id + " [" + self._name + "]", 
+                "current_temperature(Zone=%s) = %s",
+                self._id + " [" + self._name + "]",
                 _temp
-                )
+            )
         else:
             _temp = None
             _LOGGER.warn(
-                "current_temperature(Zone=%s) - is unavailable", 
+                "current_temperature(Zone=%s) - is unavailable",
                 self._id + " [" + self._name + "]"
-                )
+            )
         return _temp
-
 
     @property
     def temperature_unit(self):
         """Get the unit of measurement of the Zone temperature/setpoint."""
         _LOGGER.debug("temperature_unit(Zone=%s) = %s", self._id, TEMP_CELSIUS)
         return TEMP_CELSIUS
-
 
     @property
     def precision(self):
@@ -1200,7 +1200,6 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 #           return PRECISION_HALVES
         _LOGGER.debug("precision(Zone=%s) = %s", self._id, PRECISION_TENTHS)
         return PRECISION_TENTHS
-
 
     @property
     def min_temp(self):
@@ -1211,7 +1210,6 @@ class evoZoneEntity(evoEntity, ClimateDevice):
         _LOGGER.debug("min_temp(Zone=%s) = %s", self._id, _temp)
         return _temp
 
-
     @property
     def max_temp(self):
         """Return the maximum setpoint temperature.  Setpoints are 5-35C by
@@ -1221,14 +1219,12 @@ class evoZoneEntity(evoEntity, ClimateDevice):
         _LOGGER.debug("max_temp(Zone=%s) = %s", self._id, _temp)
         return _temp
 
-
     @property
     def scheduled_temperature(self, datetime=None):
         """Return the temperature we try to reach."""
         _temp = self._getZoneById(self._id, 'schedule')
 
         _LOGGER.debug("scheduled_temperature(Zone=%s) = %s", self._id, _temp)
-
 
     @property
     def target_temperature(self):
@@ -1247,12 +1243,11 @@ class evoZoneEntity(evoEntity, ClimateDevice):
                 [_SETPOINT_STATUS][_TARGET_TEMPERATURE]
 
         _LOGGER.info(
-            "target_temperature(Zone=%s) = %s", 
-            self._id + " [" + self._name + "]", 
+            "target_temperature(Zone=%s) = %s",
+            self._id + " [" + self._name + "]",
             _temp
-            )
+        )
         return _temp
-
 
     @property
     def target_temperature_step(self):
@@ -1263,9 +1258,8 @@ class evoZoneEntity(evoEntity, ClimateDevice):
             "target_temperature_step(Zone=%s) = %s",
             self._id,
             _step
-            )
+        )
         return _step
-
 
 
     def update(self):
@@ -1281,8 +1275,8 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 
 
 
-class evoDhwEntity(evoZoneEntity):
-    """Honeywell evohome DHW Entity base."""
+class evoDhwEntity(evoEntity, ClimateDevice):
+    """Base for a Honeywell evohome DHW controller."""
 
     def __init__(self, hass, client, dhw):
         """Initialize the evoEntity."""
@@ -1291,9 +1285,10 @@ class evoDhwEntity(evoZoneEntity):
         self.client = client
 ###
         self._id = dhw['dhwId']
-        self._name = '_DHW'
+        self._obj = self.client.locations[0]._gateways[0]._control_systems[0].hotwater
+#       self._name = '~DHW'
 
-        _LOGGER.info("__init__(dhw=%s)", self._id + " [" + self._name + "]")
+        _LOGGER.info("__init__(dhw=%s)", self._id + " [" + self.name() + "]")
 
         self._assumed_state = False
 
@@ -1305,110 +1300,84 @@ class evoDhwEntity(evoZoneEntity):
 
         return None
 
+    @property
+    def supported_features(self):
+        """Get the list of supported features of the DHW controller."""
+        _feats = SUPPORT_OPERATION_MODE | SUPPORT_ON_OFF
+        _LOGGER.info("supported_features(DHW=%s) = %s", self._id, _feats)
+        return _feats
 
     @property
     def state(self):
-        """Return the zone's current state (usually, its operation mode).
-
-        A zone's state is usually its operation mode, but they may enter
-        OpenWindowMode autonomously."""
-
-        _zone = self.hass.data[DATA_EVOHOME]['status'] \
-            ['dhw']
-
-        _zone_state  = _zone['stateStatus']['state']
-        _zone_opmode = _zone['stateStatus']['mode']
-
-        _cont_opmode = self.hass.data[DATA_EVOHOME]['status'] \
-            ['systemModeStatus']['mode']
-
-        _state = _zone_state
-
-
-
-#       if _cont_opmode == EVO_AWAY:    _state = EVO_AWAY      #(& target_temp = 10)
-#       if _cont_opmode == EVO_HEATOFF: _state = EVO_FROSTMODE #(& target_temp = 5)
-
-# EVO_AUTOECO resets EVO_TEMPOVER (but not EVO_PERMOVER) to EVO_FOLLOW (EVO_AUTOECO)
-# EVO_DAYOFF  resets EVO_TEMPOVER (but not EVO_PERMOVER) to EVO_FOLLOW (EVO_DAYOFF)
-
-
-
-# if we haven't yet figured out the zone's state, then it must be one of these:
-        if _state is None:
-            if _zone_opmode == EVO_FOLLOW:
-                if _cont_opmode == EVO_RESET:
-                    _state = EVO_AUTO
-                elif _cont_opmode == EVO_HEATOFF:
-                    _state = EVO_FROSTMODE
-                else:
-                    _state = _cont_opmode
-            else:
-                _state = _zone_opmode
-
-
-
-# c) Otherwise, the Zone's state is equal to as it's current operating mode
-        _LOGGER.info(
-            "state(DHW=%s) = %s [setpoint=xx, opmode=%s, cont_opmode=%s]",
-            self._id + " [" + self._name + "]",
-            _state,
-#           _zone_target,
-            _zone_opmode,
-            _cont_opmode,
-        )
-        return _state
-
-
-
-    @property
-    def device_state_attributes(self):
-        return None
+        """Return the current state of the DHW (On, or Off)."""
+        _status = self.hass.data[DATA_EVOHOME]['status']['dhw'] \
+            ['stateStatus']['state']
+        _LOGGER.info("state(DHW=%s) = %s", self._id, _status)
+        return _status
 
     @property
     def current_operation(self):
-        return None
+        """Return the current operating mode of the DHW."""
+        _status = self.hass.data[DATA_EVOHOME]['status']['dhw'] \
+            ['stateStatus']['mode']
+        _LOGGER.info("current_operation(DHW=%s) = %s", self._id, _status)
+        return _status
 
     @property
     def operation_list(self):
-        return None
+        """Return the DHW controller's available operation modes."""
+        _oplist = [EVO_FOLLOW, EVO_TEMPOVER, EVO_PERMOVER]
+        _LOGGER.info("operation_list(DHW=%s) = %s", self._id, _oplist)
+        return _oplist
 
-    def set_operation_mode(self, operation_mode, setpoint=None, until=None):
-        return True
+
+    def async_set_operation_mode(self, operation_mode):
+        """Set new target operation mode.
+
+        This method must be run in the event loop and returns a coroutine.
+        """
+        return self.hass.async_add_job(self.set_operation_mode, operation_mode)
+
+
+    def set_operation_mode(self, operation_mode, onoff=None, until=None):
+        """Set new target operation mode."""
+        raise NotImplementedError()
+
+
+    def turn_on(self):
+        """Turn device on."""
+        raise NotImplementedError()
+
+
+    def turn_off(self):
+        """Turn device off."""
+        raise NotImplementedError()
 
     @property
     def name(self):
-        """Get the name of the DHW."""
-        _LOGGER.debug("name(DHW=%s) = %s", self._id, self._name)
-        return self._name
+        """Return the DHW controller's (pseudo) name."""
+        _name = '~DHW
+        _LOGGER.debug("name(DHW=%s) = %s", self._id, _name)
+        return _name
 
     @property
     def icon(self):
         """Return the icon to use in the frontend UI."""
         _icon = "mdi:thermometer-lines"
-        _LOGGER.debug("icon(DHW=%s) = %s", self._id , _icon)
+        _LOGGER.debug("icon(DHW=%s) = %s", self._id, _icon)
         return _icon
-
-    def set_temperature(self, **kwargs):
-        return True
 
     @property
     def current_temperature(self):
         """Return the current temperature of the DHW."""
         _status = self.hass.data[DATA_EVOHOME]['status']['dhw']
+
         if _status['temperatureStatus']['isAvailable']:
             _temp = _status['temperatureStatus']['temperature']
-            _LOGGER.info(
-                "current_temperature(DHW=%s) = %s", 
-                self._id + " [" + self._name + "]", 
-                _temp
-                )
+            _LOGGER.info("current_temperature(DHW=%s) = %s", self._id, _temp)
         else:
             _temp = None
-            _LOGGER.warn(
-                "current_temperature(DHW=%s) - is unavailable", 
-                self._id + " [" + self._name + "]"
-                )
+            _LOGGER.warn("current_temperature(DHW=%s) - unavailable", self._id)
         return _temp
 
     @property
@@ -1417,48 +1386,22 @@ class evoDhwEntity(evoZoneEntity):
         _LOGGER.debug("temperature_unit(DHW=%s) = %s", self._id, TEMP_CELSIUS)
         return TEMP_CELSIUS
 
-
     @property
     def precision(self):
         """Return the precision of the DHW temperature/setpoint."""
-        _LOGGER.debug("precision(Zone=%s) = %s", self._id, PRECISION_HALVES)
-        return PRECISION_HALVES
+#       if not ?using v1 API? == TEMP_CELSIUS:
+#           return PRECISION_HALVES
+        _LOGGER.debug("precision(DHW=%s) = %s", self._id, PRECISION_TENTHS)
+        return PRECISION_TENTHS
 
-    @property
-    def min_temp(self):
-        """Return the maximum setpoint temperature, ??-??C by default."""
-        _temp = 40
-        _LOGGER.debug("min_temp(DHW=%s) = %s", self._id, _temp)
-        return _temp
-
-    @property
-    def max_temp(self):
-        """Return the maximum setpoint temperature, ??-??C by default."""
-        _temp = 70
-        _LOGGER.debug("max_temp(DHW=%s) = %s", self._id, _temp)
-        return _temp
-
-    @property
-    def scheduled_temperature(self, datetime=None):
-        return 66
-
-    @property
-    def target_temperature(self):
-        return 99
-
-    @property
-    def target_temperature_step(self):
-        return PRECISION_HALVES
-
-
+        
     def update(self):
-        """Get the latest state (operating mode, temperature) of a zone."""
-        _LOGGER.info("update(DHW=%s)", self._id + " [" + self._name + "]")
+        """Get the latest state data (operating mode, temperature) of a zone."""
+        _LOGGER.info("update(DHW=%s)", self._id + " [" + self.name() + "]")
 
-        ec_status = self.hass.data[DATA_EVOHOME]['status']
-#       _LOGGER.debug("ec_status = %s.", ec_status)
-        if ec_status == {}:
-            _LOGGER.error("ec_status = %s.", ec_status)
-
-        return
-
+        ec_status = self.hass.data[DATA_EVOHOME]['status']['dhw']
+        if ec_status is None or ec_status == {}:
+            _LOGGER.error("update(DHW=%s) ec_status = {}")
+        else:
+            _LOGGER.debug("update(DHW=%s) ec_status = %s", ec_status)
+        return True

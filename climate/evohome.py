@@ -4,15 +4,12 @@ Support for Honeywell (EU-only) Evohome installations: 1 controller & 1+ zones.
 
 import logging
 
-from homeassistant.core import callback  # used for @callback
-
 from custom_components.evohome import (
     evoControllerEntity,
     evoZoneEntity,
     evoDhwEntity,
 
     DATA_EVOHOME,
-    DISPATCHER_EVOHOME,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,9 +40,9 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     )
 
     master = evoController(hass, ec_api, controller)  # create the controller
-
-    
     slaves = []
+
+
 # Collect each (slave) zone as a (climate component) device
     for zone in controller['zones']:
         _LOGGER.info(
@@ -55,7 +52,6 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
             zone['zoneType']
         )
 
-        
 # We may not handle some zones correctly (e.g. UFH) - how to test for them?
 #       if zone['zoneType'] in [ "RadiatorZone", "ZoneValves" ]:
         if True:
@@ -65,7 +61,6 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
 # Collect any (slave) DHW zone as a (climate component) device
     if 'dhw' in controller:
-#   if 'modelType' in controller:
         _LOGGER.info(
             "Found DHW: id: %s",
             controller['dhw']['dhwId']
@@ -74,7 +69,8 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
         slave = evoDhw(hass, ec_api, controller['dhw'])  # create a zone
         slaves.append(slave)  # add this DHW zone to the list of devices
 
-# Now, add controller and all zones in one batch for efficiency
+
+# Now, for efficiency) add controller and all zones in a single call
     add_devices([master] + slaves, False)
 
     _LOGGER.info("Finished: setup_platform()")
@@ -83,11 +79,11 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
 class evoController(evoControllerEntity):
     """Representation of a Honeywell evohome hub/controller."""
-        
+
 
 class evoZone(evoZoneEntity):
     """Representation of a Honeywell evohome heating zone."""
 
+
 class evoDhw(evoDhwEntity):
     """Representation of a Honeywell evohome DHW controller."""
-
