@@ -389,6 +389,7 @@ def _returnZoneSchedules(client):
     return schedules  # client.zone_schedules_backup()
 
 
+
 class evoEntity(Entity):
     """Base for Honeywell evohome Entities."""
 
@@ -405,7 +406,7 @@ class evoEntity(Entity):
         """Process a dispatcher connect."""
         _LOGGER.info(
             "%s has received a '%s' packet from %s",
-            self._id + " [" + self.name() + "]",
+            self._id + " [" + self.name + "]",
             packet['signal'],
             packet['sender']
         )
@@ -413,7 +414,7 @@ class evoEntity(Entity):
         if packet['signal'] == 'update':
             _LOGGER.info(
                 "%s is calling schedule_update_ha_state(force_refresh=True)...",
-                self._id + " [" + self.name() + "]"
+                self._id + " [" + self.name + "]"
             )
 #           self.update()
             self.async_schedule_update_ha_state(force_refresh=True)
@@ -422,7 +423,7 @@ class evoEntity(Entity):
         if packet['signal'] == 'assume':
             # _LOGGER.info(
                 # "%s is calling schedule_update_ha_state(force_refresh=False)...",
-                # self._id + " [" + self.name() + "]"
+                # self._id + " [" + self.name + "]"
             # )
             self._assumed_state = True
             self.async_schedule_update_ha_state(force_refresh=False)
@@ -1288,7 +1289,7 @@ class evoDhwEntity(evoEntity, ClimateDevice):
         self._obj = self.client.locations[0]._gateways[0]._control_systems[0].hotwater
 #       self._name = '~DHW'
 
-        _LOGGER.info("__init__(dhw=%s)", self._id + " [" + self.name() + "]")
+        _LOGGER.info("__init__(dhw=%s)", self._id + " [" + self.name + "]")
 
         self._assumed_state = False
 
@@ -1356,7 +1357,7 @@ class evoDhwEntity(evoEntity, ClimateDevice):
     @property
     def name(self):
         """Return the DHW controller's (pseudo) name."""
-        _name = '~DHW
+        _name = '~DHW'
         _LOGGER.debug("name(DHW=%s) = %s", self._id, _name)
         return _name
 
@@ -1397,7 +1398,7 @@ class evoDhwEntity(evoEntity, ClimateDevice):
         
     def update(self):
         """Get the latest state data (operating mode, temperature) of a zone."""
-        _LOGGER.info("update(DHW=%s)", self._id + " [" + self.name() + "]")
+        _LOGGER.info("update(DHW=%s)", self._id + " [" + self.name + "]")
 
         ec_status = self.hass.data[DATA_EVOHOME]['status']['dhw']
         if ec_status is None or ec_status == {}:
