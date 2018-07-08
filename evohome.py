@@ -890,11 +890,17 @@ class evoZoneEntity(evoEntity, ClimateDevice):
         """Initialize the evoEntity."""
         super().__init__(hass, client, zone)
 
-        self._id = zone['zoneId']
-        self._obj = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id[self._id]
-        self._name = zone['name']  ## TBA - remove this??
+### Old way
+#       self._id = zone['zoneId']
+#       self._obj = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id[self._id]
+#       self._name = zone['name']  ## TBA - remove this??
+### New way
+        self._obj = zone
+        self._id = zone.zoneId
+        self._name = zone.name  ## TBA - remove this??
 
         _LOGGER.info("__init__(zone=%s)", self._id + " [" + self._name + "]")
+        _LOGGER.info("__init__(zone=%s)", self._obj.zoneId + " [" + self._obj.name + "]")
 
         self._assumed_state = False
 
@@ -933,17 +939,10 @@ class evoZoneEntity(evoEntity, ClimateDevice):
         A zone's state is usually its operation mode, but they may enter
         OpenWindowMode autonomously."""
 
-        _zone = self._getZoneById(self._id, 'status')
-
-        _zone_target = _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE]
-        _zone_opmode = _zone[_SETPOINT_STATUS]['setpointMode']
+        _state = None
 
         _cont_opmode = self.hass.data[DATA_EVOHOME]['status'] \
             ['systemModeStatus']['mode']
-
-        _state = None
-
-
 
         if _cont_opmode == EVO_AWAY:    _state = EVO_AWAY      #(& target_temp = 10)
         if _cont_opmode == EVO_HEATOFF: _state = EVO_FROSTMODE #(& target_temp = 5)
@@ -952,6 +951,10 @@ class evoZoneEntity(evoEntity, ClimateDevice):
 # EVO_DAYOFF  resets EVO_TEMPOVER (but not EVO_PERMOVER) to EVO_FOLLOW (EVO_DAYOFF)
 
 
+        _zone = self._getZoneById(self._id, 'status')
+
+        _zone_target = _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE]
+        _zone_opmode = _zone[_SETPOINT_STATUS]['setpointMode']
 
         if _zone_target == 55:
 ### TBA do I need to check if zone is in 'FollowSchedule' mode
@@ -1284,10 +1287,9 @@ class evoDhwEntity(evoEntity, ClimateDevice):
 ###     super().__init__(hass, client, dhw)  ## do the following instead...
         self.hass = hass
         self.client = client
-###
-        self._id = dhw['dhwId']
-        self._obj = self.client.locations[0]._gateways[0]._control_systems[0].hotwater
-#       self._name = '~DHW'
+### New way...
+        self._obj = dhw
+        self._id = dhw.dhwId
 
         _LOGGER.info("__init__(dhw=%s)", self._id + " [" + self.name + "]")
 
@@ -1311,10 +1313,20 @@ class evoDhwEntity(evoEntity, ClimateDevice):
     @property
     def state(self):
         """Return the current state of the DHW (On, or Off)."""
-        _status = self.hass.data[DATA_EVOHOME]['status']['dhw'] \
-            ['stateStatus']['state']
-        _LOGGER.info("state(DHW=%s) = %s", self._id, _status)
-        return _status
+        _state = None
+
+        _cont_opmode = self.hass.data[DATA_EVOHOME]['status'] \
+            ['systemModeStatus']['mode']
+
+        if _cont_opmode == EVO_AWAY:    _state = 'Off'
+#       if _cont_opmode == EVO_HEATOFF: _state = ???
+
+# if we haven't yet figured out the zone's state, then:
+        if _state is None:
+            _state = self.hass.data[DATA_EVOHOME]['status']['dhw'] \
+                ['stateStatus']['state']
+        _LOGGER.info("state(DHW=%s) = %s", self._id, _state)
+        return _state
 
     @property
     def current_operation(self):
@@ -1337,28 +1349,48 @@ class evoDhwEntity(evoEntity, ClimateDevice):
 
         This method must be run in the event loop and returns a coroutine.
         """
+        _LOGGER.info("async_set_operation_mode(DHW=%s, operation_mode=%s)", 
+            self._id, operation_mode)
         return self.hass.async_add_job(self.set_operation_mode, operation_mode)
 
 
-    def set_operation_mode(self, operation_mode, onoff=None, until=None):
-        """Set new target operation mode."""
-        raise NotImplementedError()
+    def set_operation_mode(self, operation_mode):
+        """Set new operation mode."""
+        if operation_mode == EVO_FOLLOW:
+            _state = ''
+        else:
+            _state = self.state
+            
+        if operation_mode == EVO_TEMPOVER:
+            _until = datetime.now() + timedelta(hours=1)
+        else:
+            _until = None
+
+        _data =  {'State':_state, 'Mode':operation_mode, 'UntilTime':_until}
+        self._obj._set_dhw(_data)
+        return
 
 
     def turn_on(self):
-        """Turn device on."""
-        raise NotImplementedError()
+        """Turn DHW on for an hour."""
+        _hour = datetime.now() + timedelta(hours=1)
+        _data =  {'State':'On', 'Mode':EVO_TEMPOVER, 'UntilTime':_hour}
+        self._obj._set_dhw(_data)
+        return
 
 
     def turn_off(self):
-        """Turn device off."""
-        raise NotImplementedError()
+        """Turn DHW off for an hour."""
+        _hour = datetime.now() + timedelta(hours=1)
+        _data =  {'State':'Off', 'Mode':EVO_TEMPOVER, 'UntilTime':_hour}
+        self._obj._set_dhw(_data)
+        return
 
     @property
     def name(self):
         """Return the DHW controller's (pseudo) name."""
         _name = '~DHW'
-        _LOGGER.debug("name(DHW=%s) = %s", self._id, _name)
+        _LOGGER.info("name(DHW=%s, objID=%s) = %s", self._id, self._obj.dhwId, _name)
         return _name
 
     @property
@@ -1398,7 +1430,7 @@ class evoDhwEntity(evoEntity, ClimateDevice):
         
     def update(self):
         """Get the latest state data (operating mode, temperature) of a zone."""
-        _LOGGER.info("update(DHW=%s)", self._id + " [" + self.name + "]")
+        _LOGGER.info("update(DHW=%s)", self._id)
 
         ec_status = self.hass.data[DATA_EVOHOME]['status']['dhw']
         if ec_status is None or ec_status == {}:
