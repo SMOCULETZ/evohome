@@ -109,12 +109,12 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
 
 class evoController(evoControllerEntity):
-    """Representation of a Honeywell evohome hub/controller."""
+    """Representation of a Honeywell evohome Controller (hub)."""
 
 
 class evoZone(evoZoneEntity):
-    """Representation of a Honeywell evohome heating zone."""
+    """Representation of a Honeywell evohome Heating zone."""
 
 
 class evoDhw(evoDhwEntity):
-    """Representation of a Honeywell evohome DHW controller."""
+    """Representation of a Honeywell evohome DHW zone."""
