@@ -5,11 +5,13 @@ Support for Honeywell (EU-only) Evohome installations: 1 controller & 1+ zones.
 import logging
 
 from custom_components.evohome import (
-    evoControllerEntity,
+    evoTcsEntity,
     evoZoneEntity,
-    evoDhwEntity,
+    evoDhwTempEntity,
+    evoDhwSwitchEntity,
 
     DATA_EVOHOME,
+    CONF_LOCATION_ID,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -22,16 +24,17 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
 # Pull out the domain configuration from hass.data
     ec_api = hass.data[DATA_EVOHOME]['evohomeClient']
-    ec_loc = hass.data[DATA_EVOHOME]['installation']
-#   ec_tmp = hass.data[DATA_EVOHOME]['status']  # not needed during init
+    ec_idx = hass.data[DATA_EVOHOME]['config'][CONF_LOCATION_ID]
+    ec_loc = ec_api.installation_info[ec_idx]
 
 
 # 1/3: Collect the (master) controller (a merge of location & controller)
 #  - controller ID is used in preference to location ID
-    tcsObjRef = ec_api.locations[0]._gateways[0]._control_systems[0]
+    tcsObjRef = ec_api.locations[ec_idx]._gateways[0]._control_systems[0]
 
     _LOGGER.info(
-        "Found Controller object (0:0:0): id: %s [%s], type: %s",
+        "Found Controller object [idx=%s): id: %s [%s], type: %s",
+        ec_idx,
         tcsObjRef.systemId,
         tcsObjRef.location.name,
         tcsObjRef.modelType
@@ -49,7 +52,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
         controller['modelType']
     )
 
-    master = evoController(hass, ec_api, controller)  # create the controller
+    master = evoTcs(hass, ec_api, tcsObjRef)  # create the controller
     slaves = []
 
 
@@ -97,10 +100,13 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
             tcsObjRef.hotwater.zone_type
         )
         
-        slave = evoDhw(hass, ec_api, tcsObjRef.hotwater)  # create a DHW zone
+        slave = evoDhwTemp(hass, ec_api, tcsObjRef.hotwater)  # create a DHW zone
         slaves.append(slave)  # add this DHW zone to the list of devices
 
+        slave = evoDhwSwitch(hass, ec_api, tcsObjRef.hotwater)  # create a DHW zone
+        slaves.append(slave)  # add this DHW zone to the list of devices
 
+        
 # Now, for efficiency) add controller and all zones in a single call
     add_devices([master] + slaves, False)
 
@@ -108,7 +114,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     return True
 
 
-class evoController(evoControllerEntity):
+class evoTcs(evoTcsEntity):
     """Representation of a Honeywell evohome Controller (hub)."""
 
 
@@ -116,5 +122,9 @@ class evoZone(evoZoneEntity):
     """Representation of a Honeywell evohome Heating zone."""
 
 
-class evoDhw(evoDhwEntity):
+class evoDhwTemp(evoDhwTempEntity):
+    """Representation of a Honeywell evohome DHW zone."""
+
+
+class evoDhwSwitch(evoDhwSwitchEntity):
     """Representation of a Honeywell evohome DHW zone."""
