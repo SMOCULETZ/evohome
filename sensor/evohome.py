@@ -3,8 +3,8 @@ Support for Honeywell Evohome (EU): a controller with 0+ zones +/- DHW.
 """
 
 from custom_components.evohome import (
-    evoTcsDevice, evoZoneDevice, 
-#   evoDhwSensorDevice,
+#   evoTcsDevice, evoZoneDevice, 
+    evoDhwSensorDevice,
 #   evoDhwSwitchDevice,
     DATA_EVOHOME, CONF_LOCATION_ID,
 )
@@ -12,9 +12,9 @@ import logging
 _LOGGER = logging.getLogger(__name__)
 
 def setup_platform(hass, config, add_devices, discovery_info=None):
-    """Set up a Honeywell evohome CH/DHW system: 1 controller & many zones."""
-
-    _LOGGER.info("Started: setup_platform(), CLIMATE")
+    """Set up a Honeywell evohome CH/DHW system: this is the DHW controller."""
+# NB: DHW is a sensor/switch pair as there is no BOILER entity template
+    _LOGGER.info("Started: setup_platform(), SENSOR")
 
 # Pull out the domain configuration from hass.data
     ec_api = hass.data[DATA_EVOHOME]['evohomeClient']
@@ -32,25 +32,25 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
         tcsObjRef.modelType
     )
 
-    master = evoTcsDevice(hass, ec_api, tcsObjRef)  # create the controller
-    slaves = []
-
-# Collect each (slave) zone as a (CLIMATE component) device
-    for zoneObjRef in tcsObjRef._zones:
+    
+    
+    
+# Collect any DHW zone as a (SENSOR component) device
+    if tcsObjRef.hotwater:
         _LOGGER.info(
-            "Found Zone object: id: %s, type: %s",
-            zoneObjRef.zoneId + " [" + zoneObjRef.name + "] ",
-            zoneObjRef.zoneType
+            "DHW SENSOR object: Found, zoneId(dhwId): %s, type: %s",
+            tcsObjRef.hotwater.zoneId,
+            tcsObjRef.hotwater.zone_type
         )
 
-        slave = evoZoneDevice(hass, ec_api, zoneObjRef)
-        slaves.append(slave)
+        slave = evoDhwSensorDevice(hass, ec_api, tcsObjRef.hotwater)
+        add_devices([slave], False)
 
-    if len(slaves) == 0:
-        _LOGGER.info("Zone CLIMATE objects: None found")
+    else:
+        _LOGGER.info("DHW SENSOR object: None found")
 
-    add_devices([master] + slaves, False)
-
-    _LOGGER.info("Finished: setup_platform(), CLIMATE")
+    
+    
+    _LOGGER.info("Finished: setup_platform(), SENSOR")
     return True
     

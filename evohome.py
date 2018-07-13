@@ -1,5 +1,5 @@
 """
-Support for Honeywell (EU-only) Evohome installations: 1 controller & 1+ zones.
+Support for Honeywell Evohome (EU): a controller with 0+ zones +/- DHW.
 
 To install it, copy it to ${HASS_CONFIG_DIR}/custom_components. The
 configuration.yaml as below.  scan_interval is in seconds, but is rounded up to
@@ -182,6 +182,10 @@ def setup(hass, config):
 
 ### Load platforms...
     load_platform(hass, 'climate', DOMAIN)
+    load_platform(hass, 'switch', DOMAIN)
+    load_platform(hass, 'sensor', DOMAIN)
+
+
 
     _LOGGER.info("Finished: setup()")
     return True
@@ -556,7 +560,7 @@ class evoEntity(Entity):
 
 
 
-class evoTcsEntity(evoEntity):
+class evoTcsDevice(evoEntity):
     """Base for a Honeywell evohome TCS (temperature control system) hub device (aka Controller)."""
 
     def __init__(self, hass, client, objRef):
@@ -1199,7 +1203,7 @@ class evoSlaveEntity(evoEntity):
 
 
 
-class evoZoneEntity(evoSlaveEntity, ClimateDevice):
+class evoZoneDevice(evoSlaveEntity, ClimateDevice):
     """Base for a Honeywell evohome Heating zone (aka Zone)."""
 
     @property
@@ -1573,8 +1577,7 @@ class evoDhwEntity(evoSlaveEntity):
 
 
 
-        
-class evoDhwTempEntity(evoDhwEntity, ClimateDevice):
+class evoDhwSensorDevice(evoDhwEntity, ClimateDevice):
     """Base for a Honeywell evohome DHW zone (aka DHW)."""
 
     @property
@@ -1630,7 +1633,7 @@ class evoDhwTempEntity(evoDhwEntity, ClimateDevice):
 
 
 
-class evoDhwSwitchEntity(evoDhwEntity, ToggleEntity):
+class evoDhwSwitchDevice(evoDhwEntity, ToggleEntity):
     """Base for a Honeywell evohome DHW zone (aka DHW)."""
 
     @property
