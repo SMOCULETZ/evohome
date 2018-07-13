@@ -182,10 +182,8 @@ def setup(hass, config):
 
 ### Load platforms...
     load_platform(hass, 'climate', DOMAIN)
-    load_platform(hass, 'switch', DOMAIN)
-    load_platform(hass, 'sensor', DOMAIN)
-
-
+#   load_platform(hass, 'switch', DOMAIN)
+#   load_platform(hass, 'sensor', DOMAIN)
 
     _LOGGER.info("Finished: setup()")
     return True
@@ -560,7 +558,7 @@ class evoEntity(Entity):
 
 
 
-class evoTcsDevice(evoEntity):
+class evoController(evoEntity):
     """Base for a Honeywell evohome TCS (temperature control system) hub device (aka Controller)."""
 
     def __init__(self, hass, client, objRef):
@@ -1203,7 +1201,7 @@ class evoSlaveEntity(evoEntity):
 
 
 
-class evoZoneDevice(evoSlaveEntity, ClimateDevice):
+class evoZone(evoSlaveEntity, ClimateDevice):
     """Base for a Honeywell evohome Heating zone (aka Zone)."""
 
     @property
@@ -1577,7 +1575,7 @@ class evoDhwEntity(evoSlaveEntity):
 
 
 
-class evoDhwSensorDevice(evoDhwEntity, ClimateDevice):
+class evoDhwSensor(evoDhwEntity, ClimateDevice):
     """Base for a Honeywell evohome DHW zone (aka DHW)."""
 
     @property
@@ -1633,7 +1631,7 @@ class evoDhwSensorDevice(evoDhwEntity, ClimateDevice):
 
 
 
-class evoDhwSwitchDevice(evoDhwEntity, ToggleEntity):
+class evoDhwSwitch(evoDhwEntity, ToggleEntity):
     """Base for a Honeywell evohome DHW zone (aka DHW)."""
 
     @property
