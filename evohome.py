@@ -1203,6 +1203,17 @@ class evoZoneEntity(evoSlaveEntity, ClimateDevice):
     """Base for a Honeywell evohome Heating zone (aka Zone)."""
 
     @property
+    def _sched_temperature(self, datetime=None):
+        """Return the temperature we try to reach."""
+        _temp = self._getZoneById(self._id, 'schedule')
+
+        _LOGGER.debug(
+            "_sched_temperature(Zone=%s) = %s", 
+            self._id, 
+            _temp
+        )
+
+    @property
     def state(self):
         """Return the zone's current state (usually, its operation mode).
 
@@ -1316,17 +1327,6 @@ class evoZoneEntity(evoSlaveEntity, ClimateDevice):
 
         _LOGGER.info("state_attributes(Zone=%s) = %s", self._id, data)
         return data
-
-    @property
-    def _sched_temperature(self, datetime=None):
-        """Return the temperature we try to reach."""
-        _temp = self._getZoneById(self._id, 'schedule')
-
-        _LOGGER.debug(
-            "_sched_temperature(Zone=%s) = %s", 
-            self._id, 
-            _temp
-        )
 
     @property
     def target_temperature(self):
@@ -1491,7 +1491,7 @@ class evoDhwEntity(evoSlaveEntity):
 
             if _cont_opmode == EVO_AWAY:
                 _state = DHW_STATES[STATE_OFF]
-                _LOGGER.info("_get_state(DHW=%s), state is %s (using heuristics)", self._id, _state)
+                _LOGGER.debug("_get_state(DHW=%s), state is %s (using heuristics)", self._id, _state)
 
 # if we haven't yet figured out the DHW's state as yet, then:
         if _state is None:
@@ -1499,11 +1499,11 @@ class evoDhwEntity(evoSlaveEntity):
                 ['stateStatus']['state']
 
             if self.assumed_state:
-                _LOGGER.info("_get_state(DHW=%s), state is %s (assumed)", self._id, _state)
+                _LOGGER.debug("_get_state(DHW=%s), state is %s (assumed)", self._id, _state)
             else:
-                _LOGGER.info("_get_state(DHW=%s), state is %s (latest actual)", self._id, _state)
+                _LOGGER.debug("_get_state(DHW=%s), state is %s (latest actual)", self._id, _state)
 
-        _LOGGER.info("_get_state(DHW=%s) = %s", self._id, _state)
+        _LOGGER.debug("_get_state(DHW=%s) = %s", self._id, _state)
         return _state
 
 
@@ -1523,7 +1523,7 @@ class evoDhwEntity(evoSlaveEntity):
             _until = None
         _data =  {'State':_state, 'Mode':_mode, 'UntilTime':_until}
         
-        _LOGGER.debug("Calling v2 API [1 request(s)]: dhw._set_dhw(%s)...", _data)
+        _LOGGER.info("Calling v2 API [1 request(s)]: dhw._set_dhw(%s)...", _data)
         self._obj._set_dhw(_data)
 
         self.hass.data[DATA_EVOHOME]['status']['dhw'] \
@@ -1540,8 +1540,37 @@ class evoDhwEntity(evoSlaveEntity):
         _state = STATE_ON if self._get_state == DHW_STATES[STATE_ON] \
             else STATE_OFF
 
-        _LOGGER.info("state(DHWs=%s) = %s", self._id, _state)
+        _LOGGER.info("state(DHWs=%s) = %s",
+            self._id + " [" + self.name + " ]", 
+            _state
+        )
         return _state
+     
+     
+    def set_operation_mode(self, operation_mode):
+        """Set new operation mode."""
+        if operation_mode == EVO_FOLLOW:
+            _state = ''
+        else:
+            _state = self.state
+            
+        _mode = operation_mode
+
+        if operation_mode == EVO_TEMPOVER:
+            _until = datetime.now() + timedelta(hours=1)
+            _until =_until.strftime('%Y-%m-%dT%H:%M:%SZ')
+        else:
+            _until = None
+
+        self._set_state(_state, _mode, _until, **kwargs)
+
+        _LOGGER.info(
+            "set_operation_mode(DHWt=%s) = %s", 
+            self._id + " [" + self.name + " ]", 
+            _data
+        )
+        return
+
 
 
         
@@ -1558,7 +1587,7 @@ class evoDhwTempEntity(evoDhwEntity, ClimateDevice):
     @property
     def supported_features(self):
         """Return the list of supported features of the Heating/DHW zone."""
-        _feats = SUPPORT_OPERATION_MODE
+        _feats = False
         _LOGGER.debug("supported_features(DHWt=%s) = %s", self._id, _feats)
         return _feats
 
@@ -1599,27 +1628,6 @@ class evoDhwTempEntity(evoDhwEntity, ClimateDevice):
         )
         return data
 
-        
-    def set_operation_mode(self, operation_mode):
-        """Set new operation mode."""
-        if operation_mode == EVO_FOLLOW:
-            _state = ''
-        else:
-            _state = self.state
-            
-        _mode = operation_mode
-
-        if operation_mode == EVO_TEMPOVER:
-            _until = datetime.now() + timedelta(hours=1)
-            _until =_until.strftime('%Y-%m-%dT%H:%M:%SZ')
-        else:
-            _until = None
-
-        self._set_state(_state, _mode, _until, **kwargs)
-
-        _LOGGER.info("set_operation_mode(DHWt=%s) = %s", self._id, _data)
-        return
-
 
 
 class evoDhwSwitchEntity(evoDhwEntity, ToggleEntity):
@@ -1635,7 +1643,7 @@ class evoDhwSwitchEntity(evoDhwEntity, ToggleEntity):
     @property
     def supported_features(self):
         """Return the list of supported features of the Heating/DHW zone."""
-        _feats = SUPPORT_ON_OFF
+        _feats = SUPPORT_OPERATION_MODE | SUPPORT_ON_OFF
         _LOGGER.debug("supported_features(DHWs%s) = %s", self._id, _feats)
         return _feats
 
