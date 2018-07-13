@@ -155,6 +155,8 @@ EVO_PERMOVER   = 'PermanentOverride'
 EVO_OPENWINDOW = 'OpenWindow'
 EVO_FROSTMODE  = 'FrostProtect'
 
+DHW_STATES = {STATE_ON : 'On', STATE_OFF : 'Off'}
+
 
 
 def setup(hass, config):
@@ -1509,20 +1511,23 @@ class evoDhwEntity(evoSlaveEntity):
         return _state
 
 
-    def _set_state(self, _state, _mode, _until=None) -> None:
+    def _set_state(self, _state, _mode=None, _until=None) -> None:
         """Turn DHW on/off for an hour, until next setpoint, or indefinitely."""
 
-        if True:  # turn on for a temporary period of time
+        if _state is None:
+            _state = self.state
+            
+        if _mode is None:
             _mode = EVO_TEMPOVER
-            if True:
-                _until = datetime.now() + timedelta(hours=1)
-            else:  # turn on indefinitely
-                #until next setpoint (TBD)
-                _until = datetime.now() + timedelta(hours=1)
-            _until =_until.strftime('%Y-%m-%dT%H:%M:%SZ')
-        else: 
-            _mode = EVO_PERMOVER
+
+        if _mode != EVO_TEMPOVER:
             _until = None
+        else:
+            if _until is None:
+                _until = datetime.now() + timedelta(hours=1)
+                
+            _until =_until.strftime('%Y-%m-%dT%H:%M:%SZ')
+
         _data =  {'State':_state, 'Mode':_mode, 'UntilTime':_until}
         
         _LOGGER.info("Calling v2 API [1 request(s)]: dhw._set_dhw(%s)...", _data)
@@ -1543,7 +1548,7 @@ class evoDhwEntity(evoSlaveEntity):
             else STATE_OFF
 
         _LOGGER.info("state(DHWs=%s) = %s",
-            self._id + " [" + self.name + " ]", 
+            self._id + " [" + self.name + "]", 
             _state
         )
         return _state
@@ -1564,12 +1569,12 @@ class evoDhwEntity(evoSlaveEntity):
         else:
             _until = None
 
-        self._set_state(_state, _mode, _until, **kwargs)
+        self._set_state(_state, _mode, _until)
 
         _LOGGER.info(
-            "set_operation_mode(DHWt=%s) = %s", 
-            self._id + " [" + self.name + " ]", 
-            _data
+            "set_operation_mode(DHWt=%s, %s, %s, %s)", 
+            self._id + " [" + self.name + "]", 
+            _state, _mode, _until
         )
         return
 
@@ -1581,14 +1586,14 @@ class evoDhwSensor(evoDhwEntity, ClimateDevice):
     @property
     def name(self):
         """Return the name to use in the frontend UI."""
-        _name = '~DHW8 (temp)'
+        _name = '~DHW9 (temp)'
         _LOGGER.info("name(DHWt=%s) = %s", self._id, _name)
         return _name
 
     @property
     def supported_features(self):
         """Return the list of supported features of the Heating/DHW zone."""
-        _feats = False
+        _feats = SUPPORT_OPERATION_MODE
         _LOGGER.debug("supported_features(DHWt=%s) = %s", self._id, _feats)
         return _feats
 
@@ -1623,8 +1628,8 @@ class evoDhwSensor(evoDhwEntity, ClimateDevice):
             data = {}
 
         _LOGGER.info(
-            "state_attributes(%s) = %s", 
-            self._id + " [" + self.name + " ]", 
+            "state_attributes(DHWt=%s) = %s", 
+            self._id + " [" + self.name + "]", 
             data
         )
         return data
@@ -1637,14 +1642,14 @@ class evoDhwSwitch(evoDhwEntity, ToggleEntity):
     @property
     def name(self):
         """Return the name to use in the frontend UI."""
-        _name = '~DHW8 (switch)'
+        _name = '~DHW9 (switch)'
         _LOGGER.info("name(DHWs=%s) = %s", self._id, _name)
         return _name
 
     @property
     def supported_features(self):
         """Return the list of supported features of the Heating/DHW zone."""
-        _feats = SUPPORT_OPERATION_MODE | SUPPORT_ON_OFF
+        _feats = SUPPORT_ON_OFF
         _LOGGER.debug("supported_features(DHWs%s) = %s", self._id, _feats)
         return _feats
 
@@ -1660,8 +1665,8 @@ class evoDhwSwitch(evoDhwEntity, ToggleEntity):
             pass
 
         _LOGGER.info(
-            "state_attributes(%s) = %s", 
-            self._id + " [" + self.name + " ]", 
+            "state_attributes(DHWs%s) = %s", 
+            self._id + " [" + self.name + "]", 
             data
         )
         return data
@@ -1685,24 +1690,22 @@ class evoDhwSwitch(evoDhwEntity, ToggleEntity):
     def turn_on(self, **kwargs) -> None:
         """Turn DHW on for an hour, until next setpoint, or indefinitely."""
 # TBD: Configure how long to turn on/off for...
-        DHW_STATES = {STATE_ON : 'On', STATE_OFF : 'Off'}
         _state = DHW_STATES[STATE_ON]
         
         self._set_state(_state, **kwargs)
 
-        _LOGGER.info("turn_on(DHWs=%s) = %s", self._id, _data)
+        _LOGGER.info("turn_on(DHWs=%s)", self._id)
         return None
 
         
     def turn_off(self, **kwargs) -> None:
         """Turn DHW off for an hour, until next setpoint, or indefinitely."""
 # TBD: Configure how long to turn on/off for...
-        DHW_STATES = {STATE_ON : 'On', STATE_OFF : 'Off'}
         _state = DHW_STATES[STATE_OFF]
         
         self._set_state(_state, **kwargs)
 
-        _LOGGER.info("turn_off(DHWs=%s) = %s", self._id, _data)
+        _LOGGER.info("turn_off(DHWs=%s)", self._id)
         return None
 
 
