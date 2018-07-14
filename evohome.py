@@ -1541,13 +1541,35 @@ class evoDhwEntity(evoSlaveEntity):
         return None
 
     @property
+    def name(self):
+        """Return the name to use in the frontend UI."""
+        if self.supported_features & SUPPORT_OPERATION_MODE:
+            _name = "~DHW (sensor)"
+        else:
+            _name = "~DHW"
+
+        _LOGGER.debug("name(DHW=%s) = %s", self._id, _name)
+        return _name
+
+    @property
+    def icon(self):
+        """Return the icon to use in the frontend UI."""
+        if self.supported_features & SUPPORT_OPERATION_MODE:
+            _icon = "mdi:thermometer-lines"
+        else:
+            _icon = "mdi:thermometer"
+
+        _LOGGER.debug("icon(%s) = %s", self._id, _icon)
+        return _icon
+
+    @property
     def state(self) -> str:
         """Return the state (determined by self.is_on)."""
         DHW_STATES = {STATE_ON : 'On', STATE_OFF : 'Off'}
         _state = STATE_ON if self._get_state == DHW_STATES[STATE_ON] \
             else STATE_OFF
 
-        _LOGGER.info("state(DHWs=%s) = %s",
+        _LOGGER.info("state(DHW=%s) = %s",
             self._id + " [" + self.name + "]", 
             _state
         )
@@ -1582,13 +1604,6 @@ class evoDhwEntity(evoSlaveEntity):
 
 class evoDhwSensor(evoDhwEntity, ClimateDevice):
     """Base for a Honeywell evohome DHW zone (aka DHW)."""
-
-    @property
-    def name(self):
-        """Return the name to use in the frontend UI."""
-        _name = '~DHW9 (temp)'
-        _LOGGER.info("name(DHWt=%s) = %s", self._id, _name)
-        return _name
 
     @property
     def supported_features(self):
@@ -1640,13 +1655,6 @@ class evoDhwSwitch(evoDhwEntity, ToggleEntity):
     """Base for a Honeywell evohome DHW zone (aka DHW)."""
 
     @property
-    def name(self):
-        """Return the name to use in the frontend UI."""
-        _name = '~DHW9 (switch)'
-        _LOGGER.info("name(DHWs=%s) = %s", self._id, _name)
-        return _name
-
-    @property
     def supported_features(self):
         """Return the list of supported features of the Heating/DHW zone."""
         _feats = SUPPORT_ON_OFF
@@ -1672,7 +1680,7 @@ class evoDhwSwitch(evoDhwEntity, ToggleEntity):
         return data
 
     @property
-    def xunit_of_measurement(self):
+    def OUT_unit_of_measurement(self):
         """Return the unit of measurement of this entity, if any."""
 # this prevent history of state graph
         return TEMP_CELSIUS
