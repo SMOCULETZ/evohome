@@ -155,6 +155,7 @@ EVO_PERMOVER   = 'PermanentOverride'
 EVO_OPENWINDOW = 'OpenWindow'
 EVO_FROSTMODE  = 'FrostProtect'
 
+TCS_MODES = [EVO_RESET, EVO_AUTO, EVO_AUTOECO, EVO_AWAY, EVO_DAYOFF, EVO_CUSTOM, EVO_HEATOFF]
 DHW_STATES = {STATE_ON : 'On', STATE_OFF : 'Off'}
 
 
@@ -292,7 +293,7 @@ def _updateStateData(domain_data, force_refresh=False):
 ## 1. Obtain basic configuration (usu. 1/cycle)
     idx = domain_data['config'][CONF_LOCATION_ID]
     
-    domain_data['installation'] = client.installation_info[idx]
+    domain_data['install'] = client.installation_info[idx]
 
     _LOGGER.info(
         "Location/TCS (temperature control system) used is: %s [%s]", 
@@ -304,11 +305,12 @@ def _updateStateData(domain_data, force_refresh=False):
 
 
 ## 2. Optionally, obtain schedule (usu. 1/cycle): is emphemeral, so stored here
-    tcs = client.locations[idx]._gateways[0]._control_systems[0]
+#   tcs = client.locations[idx]._gateways[0]._control_systems[0]
+#   tcs = self._obj
 
-    if domain_data['config'][CONF_USE_SCHEDULES]:
-        domain_data['schedule'] = _returnZoneSchedules(tcs)
-        domain_data['scheduleRefreshed'] = datetime.now()  # just done I/O
+#   if domain_data['config'][CONF_USE_SCHEDULES]:
+#       domain_data['schedule'] = _returnZoneSchedules(self._obj)
+#       domain_data['scheduleRefreshed'] = datetime.now()  # just done I/O
 
 
 ## 3. Obtain state (e.g. temps) (1/scan_interval)...
@@ -461,7 +463,7 @@ def _returnTempsAndModes(domain_data, high_precision=False):
     return ec2_tcs
 
 
-def _returnZoneSchedules(tcs):
+def OUT_returnZoneSchedules(tcs):
 # the client api does not expose a way to do this (it outputs to a file)
     _LOGGER.info("_returnZoneSchedules(tcs=%s)", tcs.systemId)
 
@@ -477,6 +479,7 @@ def _returnZoneSchedules(tcs):
         _LOGGER.info("Calling v2 API [1 request(s)]: client.zone.schedule(Zone=%s)...", z.zoneId)
         s = z.schedule()
         schedules[z.zoneId] = {'name': z.name, 'schedule': s}
+#       z._schedule = 
 #       zone_type = temperatureZone, or domesticHotWater
         _LOGGER.info(" - zoneId = %s, zone_type = %s",
             z.zoneId,
@@ -507,22 +510,39 @@ def _returnZoneSchedules(tcs):
 class evoEntity(Entity):
     """Base for Honeywell evohome slave devices (Heating/DHW zones)."""
 
-    def _getZoneById(self, zoneId, dataSource='status'):
+    def __init__(self, hass, client, objRef):
+        """Initialize the evohome Controller."""
+        self.hass = hass
+        self.client = client
+
+        self._obj = objRef
+        self._config = hass.data[DATA_EVOHOME]['config']
+
+# create a listener for update packets...
+        hass.helpers.dispatcher.async_dispatcher_connect(
+            DISPATCHER_EVOHOME,
+            self._connect
+        )  # for: def async_dispatcher_connect(signal, target)
+
+        return None  # __init__() should return None
+
+        
+    def OUT_getZoneById(self, zoneId, dataSource='status'):
 
         if dataSource == 'schedule':
             _zones = self.hass.data[DATA_EVOHOME]['schedule']
 
             if zoneId in _zones:
-                return _zones[zoneId]
+                return self._schedule
             else:
                 raise KeyError("zone '", zoneId, "' not in dataSource")
 
         if dataSource == 'config':
-            _zones = self.hass.data[DATA_EVOHOME]['installation'] \
+            _zones = self.hass.data[DATA_EVOHOME]['install'] \
                 ['gateways'][0]['temperatureControlSystems'][0]['zones']
 
         else:  ## if dataSource == 'status':
-            _zones = self.hass.data[DATA_EVOHOME]['status']['zones']
+            _zones = self._status['zones']
 
         for _zone in _zones:
             if _zone['zoneId'] == zoneId:
@@ -565,27 +585,24 @@ class evoController(evoEntity):
 
     def __init__(self, hass, client, objRef):
         """Initialize the evohome Controller."""
-        self.hass = hass
-        self.client = client
+        super().__init__(hass, client, objRef)
 
         self._id = objRef.systemId
-        self._obj = objRef
-#       self._id = controller['systemId']
-#       self._obj = self.client.locations[0]._gateways[0]._control_systems[0]
-
-#       self._assumed_state = False  # is this right for polled IOT devices?
-
-# create a listener for update packets...
-        hass.helpers.dispatcher.async_dispatcher_connect(
-            DISPATCHER_EVOHOME,
-            self._connect
-        )  # for: def async_dispatcher_connect(signal, target)
-
-# Ensure to Update immediately after entity has initialized (how?)
         self._should_poll = True
 
+        self._install = hass.data[DATA_EVOHOME]['install']
+        self._status = hass.data[DATA_EVOHOME]['status']
+
+        
+        
+        
+        _LOGGER.info("ZZ, self._id: %s, self._config = %s", self._id, self._config)
+        _LOGGER.info("ZZ, self._id: %s, self._install = %s", self._id, self._install)
+        _LOGGER.info("ZZ, self._id: %s, self._status = %s", self._id, self._status)
+#       _LOGGER.info("ZZ, self._id: %s, self._schedule = %s", self._id, self._schedule)
+
         _LOGGER.info("__init__(TCS=%s)", self._id + " [" + self.name + "]")
-        return None
+        return None  # __init__() should return None
 
     @callback
     def _connect(self, packet):
@@ -622,8 +639,7 @@ class evoController(evoEntity):
     @property
     def name(self):
         """Get the name of the controller."""
-        _name = "_" + self.hass.data[DATA_EVOHOME]['installation'] \
-            ['locationInfo']['name']
+        _name = "_" + self._install['locationInfo']['name']
         _LOGGER.debug("name(TCS=%s) = %s", self._id, _name)
         return _name
 
@@ -638,7 +654,7 @@ class evoController(evoEntity):
     def state(self):
         """Return the controller's current state (usually, its operation mode). After calling AutoWithReset, the controller  will enter Auto mode."""
 
-        _opmode = self.hass.data[DATA_EVOHOME]['status'] \
+        _opmode = self._status \
             ['systemModeStatus']['mode']
 
         if _opmode == EVO_RESET:
@@ -660,8 +676,8 @@ class evoController(evoEntity):
 
             _data[ATTR_OPERATION_LIST] = self.operation_list
 #           _oplist = []
-#           for mode in self.hass.data[DATA_EVOHOME]['installation'] \
-#               ['gateways'][0]['temperatureControlSystems'][0]['allowedSystemModes']:
+#           for mode in self._install['gateways'][0] \
+#               ['temperatureControlSystems'][0]['allowedSystemModes']:
 #               _oplist.append(mode['systemMode'])
 #           _data[ATTR_OPERATION_LIST] = _oplist
 
@@ -683,7 +699,7 @@ class evoController(evoEntity):
     def current_operation(self):
         """Return the operation mode of the controller."""
 
-        _opmode = self.hass.data[DATA_EVOHOME]['status'] \
+        _opmode = self._status \
             ['systemModeStatus']['mode']
 
         _LOGGER.info("current_operation(TCS=%s) = %s", self._id, _opmode)
@@ -693,8 +709,8 @@ class evoController(evoEntity):
     def operation_list(self):
         """Return the list of available operation modes."""
         _oplist = []
-        for mode in self.hass.data[DATA_EVOHOME]['installation'] \
-            ['gateways'][0]['temperatureControlSystems'][0]['allowedSystemModes']:
+        for mode in self._install['gateways'][0] \
+            ['temperatureControlSystems'][0]['allowedSystemModes']:
             _oplist.append(mode['systemMode'])
 
         _LOGGER.info("operation_list(TCS=%s) = %s", self._id, _oplist)
@@ -716,72 +732,42 @@ class evoController(evoEntity):
 
         'HeatingOff' doesn't turn off heating, instead: it simply sets setpoints to a minimum value (i.e. FrostProtect mode)."""
 
-## For (slave) Zones, when the (master) Controller enters:
-# EVO_AUTOECO, it resets EVO_TEMPOVER (but not EVO_PERMOVER) to EVO_FOLLOW
-# EVO_DAYOFF,  it resets EVO_TEMPOVER (but not EVO_PERMOVER) to EVO_FOLLOW
-
 ## At the start, the first thing to do is stop polled updates() until after
 # set_operation_mode() has been called/effected
 #       self.hass.data[DATA_EVOHOME]['lastUpdated'] = datetime.now()
         self._should_poll = False
 
-## get the system's current operation mode
-        _opmode = self.hass.data[DATA_EVOHOME]['status'] \
-            ['systemModeStatus']['mode']
-
-        _LOGGER.info(
+        _LOGGER.debug(
             "set_operation_mode(TCS=%s, operation_mode=%s), current mode = %s",
             self._id,
             operation_mode,
-            _opmode
+            self._status['systemModeStatus']['mode']
         )
 
-# PART 1: call the api & trick the UI
-# client.set_status_reset() does not exist only in >0.2.6
-        if operation_mode == EVO_RESET:
-            _LOGGER.info("Calling v2 API [1 request(s)]: controller._set_status()...")
-## This line requires only 1 location/controller, the next works for 1+
-#           self.client._get_single_heating_system()._set_status(EVO_AUTO)
-            self.client.locations[0]._gateways[0]._control_systems[0]._set_status(EVO_AUTO)
-
-            if False:
-                _LOGGER.info(" - updating Zone state data (%s), EVO_RESET")
-                _zones = self.hass.data[DATA_EVOHOME]['status']['zones']
-                for _zone in _zones:
-                    _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW
-                    _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
-                        = self._getZoneById(self._id, 'schedule')['name']
-
-        else:
-#XX           self._current_operation = operation_mode
-# There is no EvohomeClient.set_status_reset via the client v2 API (<=2.6), so
-# we're using EvohomeClient._get_single_heating_system()._set_status(5) instead.
-## This line requires only 1 location/controller, not 1+
-            functions = {
-#               EVO_RESET:     self.client.set_status_reset,
-                EVO_AUTO:      self.client.set_status_normal,
-                EVO_AUTOECO:   self.client.set_status_eco,
-                EVO_DAYOFF:    self.client.set_status_dayoff,
-                EVO_AWAY:      self.client.set_status_away,
-                EVO_HEATOFF:   self.client.set_status_heatingoff,
-                EVO_CUSTOM:    self.client.set_status_custom,
-            }
-
-# before calling func(), should check OAuth token still viable, but how?
-            _func = functions[operation_mode]
+# PART 1: Call the api
+        if operation_mode in TCS_MODES:
             _LOGGER.info(
-                "Calling v2 API [1 request(s)]: controller._set_status_%s()...",
+                "Calling v2 API [1 request(s)]: controller._set_status(%s)...",
                 operation_mode
             )
-            _func()
+## These 4 lines obligate only 1 location/controller, the 4th works for 1+
+#           self.client._get_single_heating_system()._set_status(EVO_AUTO)
+#           self.client.locations[0]._gateways[0]._control_systems[0]._set_status(EVO_AUTO)
+#           self.client.set_status_normal
+#           self._obj._set_status(EVO_AUTO)
+            self._obj._set_status(operation_mode)
+            
+        else:
+            raise NotImplementedError()
 
 
+# PART 2: HEURISTICS - update the internal state of the Controller
 ## First, Update the state of the Controller
-        if True:
-            _LOGGER.info(" - updating controller state()")
+        if self._config[CONF_USE_HEURISTICS]:
+            _LOGGER.info(" - updating Controller state data")
 ## Do one of the following (sleep just doesn't work, convergence is too long)...
             if True:
-                self.hass.data[DATA_EVOHOME]['status'] \
+                self._status \
                     ['systemModeStatus']['mode'] = operation_mode
             else:
                 _LOGGER.info(" - sleeping for x seconds...")
@@ -789,7 +775,7 @@ class evoController(evoEntity):
                 _LOGGER.info(" - sleep is finished.")
                 _updateStateData(self.client, self.hass.data[DATA_EVOHOME])
 
-            _LOGGER.info(" - calling controller.async_schedule_update_ha_state(force_refresh=False)")
+#           _LOGGER.info(" - calling controller.async_schedule_update_ha_state(force_refresh=False)")
 ##          self.async_update_ha_state(force_refresh=False)           ## doesn't work
 ##          self.schedule_update_ha_state(force_refresh=False)        ## works
 #           self.async_schedule_update_ha_state(force_refresh=False)  ## works
@@ -797,115 +783,165 @@ class evoController(evoEntity):
 # state()=state, state_attributes()=op_mode+/-temp, supported_features()=128, force_update()=False
 
 
-## Second, Inform the Zones that their state is now 'assumed'
-        if True:
+# PART 3: HEURISTICS - update the internal state of the Zones
+## For (slave) Zones, when the (master) Controller enters:
+# EVO_AUTOECO, it resets EVO_TEMPOVER (but not EVO_PERMOVER) to EVO_FOLLOW
+# EVO_DAYOFF,  it resets EVO_TEMPOVER (but not EVO_PERMOVER) to EVO_FOLLOW
+
+        if self._config[CONF_USE_HEURISTICS]:
+            _LOGGER.info(
+                " - updating Zone state data, Controller is '%s'", 
+                operation_mode
+            )
+
+## First, Inform the Zones that their state is now 'assumed'
             _packet = {'sender': 'controller', 'signal': 'assume'}
             _LOGGER.info(" - sending a dispatcher packet, %s...", _packet)
 ## invokes def async_dispatcher_send(hass, signal, *args) on zones:
-            self.hass.helpers.dispatcher.async_dispatcher_send(DISPATCHER_EVOHOME, _packet)
-
+            self.hass.helpers.dispatcher.async_dispatcher_send(
+                DISPATCHER_EVOHOME, 
+                _packet
+            )
 
 ## Second, Update target_temp of the Zones
-        _LOGGER.info(" - updating Zone state, Controller is '%s'", operation_mode)
-        _zones = self.hass.data[DATA_EVOHOME]['status']['zones']
+            _zones = self._status['zones']
 
-        if operation_mode == EVO_CUSTOM:
-            # target temps currently unknowable, await  next update()
-            pass
+            if operation_mode == EVO_CUSTOM:
+                # target temps currently unknowable, await  next update()
+                pass
 
-        elif operation_mode == EVO_RESET:
-            for _zone in _zones:
-                _zone[_SETPOINT_STATUS]['setpointMode'] \
-                    = EVO_FOLLOW
-            # set target temps according to schedule (if we're using schedules)
-                if self.hass.data[DATA_EVOHOME]['config'][CONF_USE_SCHEDULES] \
-                    and _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW:
-                    _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
-                        = self._getZoneSchedTemp(_zone['zoneId'])
-
-        elif operation_mode == EVO_AUTO:
-            for _zone in _zones:
-                if _zone[_SETPOINT_STATUS]['setpointMode'] != EVO_PERMOVER:
+            elif operation_mode == EVO_RESET:
+                for _zone in _zones:
                     _zone[_SETPOINT_STATUS]['setpointMode'] \
                         = EVO_FOLLOW
-            # set target temps according to schedule (if we're using schedules)
-                if self.hass.data[DATA_EVOHOME]['config'][CONF_USE_SCHEDULES] \
-                    and _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW:
-                    _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
-                        = self._getZoneSchedTemp(_zone['zoneId'])
+                # set target temps according to schedule?
+                    if _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW \
+                        and self._config[CONF_USE_SCHEDULES]:
+                        _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
+                            = self._getZoneSchedTemp(_zone['zoneId'])
 
-        elif operation_mode == EVO_AUTOECO:
-            for _zone in _zones:
-                if _zone[_SETPOINT_STATUS]['setpointMode'] != EVO_PERMOVER:
-                    _zone[_SETPOINT_STATUS]['setpointMode'] \
-                        = EVO_FOLLOW
-            # set target temps according to schedule, but less 3
-                if self.hass.data[DATA_EVOHOME]['config'][CONF_USE_SCHEDULES] \
-                    and _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW:
-                    _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
-                        = self._getZoneSchedTemp(_zone['zoneId']) - 3
+            elif operation_mode == EVO_AUTO:
+                for _zone in _zones:
+                    if _zone[_SETPOINT_STATUS]['setpointMode'] != EVO_PERMOVER:
+                        _zone[_SETPOINT_STATUS]['setpointMode'] \
+                            = EVO_FOLLOW
+                # set target temps according to schedule?
+                    if _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW \
+                        and self._config[CONF_USE_SCHEDULES]:
+                        _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
+                            = self._getZoneSchedTemp(_zone['zoneId'])
 
-        elif operation_mode == EVO_DAYOFF:
-            for _zone in _zones:
-                if _zone[_SETPOINT_STATUS]['setpointMode'] != EVO_PERMOVER:
-                    _zone[_SETPOINT_STATUS]['setpointMode'] \
-                        = EVO_FOLLOW
-            # set target temps according to schedule, but for Saturday
-                if self.hass.data[DATA_EVOHOME]['config'][CONF_USE_SCHEDULES] \
-                    and _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW:
-                    _dt = datetime.now()
-                    _dt += timedelta(days = 6 - int(_dt.strftime('%w')))
-                    _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
-                        = self._getZoneSchedTemp(_zone['zoneId'], dt)
+            elif operation_mode == EVO_AUTOECO:
+                for _zone in _zones:
+                    if _zone[_SETPOINT_STATUS]['setpointMode'] != EVO_PERMOVER:
+                        _zone[_SETPOINT_STATUS]['setpointMode'] \
+                            = EVO_FOLLOW
+                # set target temps according to schedule?, but less 3
+                    if _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW \
+                        and self._config[CONF_USE_SCHEDULES]:
+                        _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
+                            = self._getZoneSchedTemp(_zone['zoneId']) - 3
 
-        elif operation_mode == EVO_AWAY:
-            for _zone in _zones:
-                if _zone[_SETPOINT_STATUS]['setpointMode'] != EVO_PERMOVER:
-                    _zone[_SETPOINT_STATUS]['setpointMode'] \
-                        = EVO_FOLLOW
-            # default target temps for 'Away' is 10C, assume that for now
-                if self.hass.data[DATA_EVOHOME]['config'][CONF_USE_SCHEDULES]:
-                    _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
-                        = 10
+            elif operation_mode == EVO_DAYOFF:
+                for _zone in _zones:
+                    if _zone[_SETPOINT_STATUS]['setpointMode'] != EVO_PERMOVER:
+                        _zone[_SETPOINT_STATUS]['setpointMode'] \
+                            = EVO_FOLLOW
+                # set target temp according to schedule?, but for Saturday
+                    if _zone[_SETPOINT_STATUS]['setpointMode'] == EVO_FOLLOW \
+                        and self._config[CONF_USE_SCHEDULES]:
+                        _dt = datetime.now()
+                        _dt += timedelta(days = 6 - int(_dt.strftime('%w')))
+                        _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
+                            = self._getZoneSchedTemp(_zone['zoneId'], dt)
 
-        elif operation_mode == EVO_HEATOFF:
-            for _zone in _zones:
-                if _zone[_SETPOINT_STATUS]['setpointMode'] != EVO_PERMOVER:
-                    _zone[_SETPOINT_STATUS]['setpointMode'] \
-                        = EVO_FOLLOW
-            # default target temps for 'HeatingOff' is 5C, assume that for now
-                if self.hass.data[DATA_EVOHOME]['config'][CONF_USE_SCHEDULES]:
-                    _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
-                        = 5
+            elif operation_mode == EVO_AWAY:
+                for _zone in _zones:
+                    if _zone[_SETPOINT_STATUS]['setpointMode'] != EVO_PERMOVER:
+                        _zone[_SETPOINT_STATUS]['setpointMode'] \
+                            = EVO_FOLLOW
+                # default target for 'Away' is 10C, assume that for now
+                    if self._config[CONF_USE_SCHEDULES]:
+                        _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
+                            = 10
+
+            elif operation_mode == EVO_HEATOFF:
+                for _zone in _zones:
+                    if _zone[_SETPOINT_STATUS]['setpointMode'] != EVO_PERMOVER:
+                        _zone[_SETPOINT_STATUS]['setpointMode'] \
+                            = EVO_FOLLOW
+                # default target for 'HeatingOff' is 5C, assume that for now
+                    if self._config[CONF_USE_SCHEDULES]:
+                        _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] \
+                            = 5
 
 
-
-## Finally, send a message informing Zones that their state may have changed?...
-#       self.hass.bus.fire('mode_changed', {ATTR_ENTITY_ID: self._scs_id, ATTR_STATE: command})
-        if True:
+## Finally, , Inform the Zones that their state may have changed
+#           self.hass.bus.fire('mode_changed', {ATTR_ENTITY_ID: self._scs_id, ATTR_STATE: command})
             _packet = {'sender': 'controller', 'signal': 'update'}
             _LOGGER.info(" - sending a dispatcher packet, %s...", _packet)
 ## invokes def async_dispatcher_send(hass, signal, *args) on zones:
-            self.hass.helpers.dispatcher.async_dispatcher_send(DISPATCHER_EVOHOME, _packet)
+            self.hass.helpers.dispatcher.async_dispatcher_send(
+                DISPATCHER_EVOHOME, 
+                _packet
+            )
 
 ## At the end, the last thing to do is restart updates()
         self.hass.data[DATA_EVOHOME]['lastUpdated'] = datetime.now()
         self._should_poll = True
 
         return None
+        
+    @property
+    def is_away_mode_on(self):
+        """Return true if away mode is on."""
+        if self.supported_features & SUPPORT_AWAY_MODE:
+            _away = self.supported_features & SUPPORT_AWAY_MODE
+            _LOGGER.info("is_away_mode_on(TCS=%s) = %s", self._id, _away)
+            return _away
+        else:
+            _LOGGER.info("is_away_mode_on(TCS=%s) - Not supported!", self._id)
+            return None
+
+        
+    def async_turn_away_mode_on(self):
+        """Turn away mode on.
+
+        This method must be run in the event loop and returns a coroutine.
+        """
+        return self.hass.async_add_job(self.turn_away_mode_on)
+
+        
+    def turn_away_mode_on(self):
+        """Turn away mode on."""
+        self.set_operation_mode(EVO_AWAY)
+        _LOGGER.info("turn_away_mode_on(TCS=%s)", self._id)
+        return
+
+
+    def async_turn_away_mode_off(self):
+        """Turn away mode off.
+
+        This method must be run in the event loop and returns a coroutine.
+        """
+        return self.hass.async_add_job(self.turn_away_mode_off)
+
+        
+    def turn_away_mode_off(self):
+        """Turn away mode off."""
+        self.set_operation_mode(EVO_AUTO)
+        _LOGGER.info("turn_away_mode_off(TCS=%s)", self._id)
+        return
 
     @property
     def supported_features(self):
         """Get the list of supported features of the controller."""
-## It will likely be the case we need to support Away/Eco/Off modes in the HA fashion
-## even though these modes are subtly different - this will allow tight integration
-## with the HA landscape / other HA components, e.g. Alexa/Google integration
-        _LOGGER.info(
-            "supported_features(TCS=%s) = %s",
-            self._id,
-            SUPPORT_OPERATION_MODE
-        )
-        return SUPPORT_OPERATION_MODE
+# It will likely be the case we need to support Away/Eco/Off modes in the HA
+# fashion, even though these modes are subtly different - this will allow tight
+# integration with the HA landscape e.g. Alexa/Google integration
+        _flags = SUPPORT_OPERATION_MODE | SUPPORT_AWAY_MODE
+        _LOGGER.info("supported_features(TCS=%s) = %s", self._id, _flags)
+        return _flags
 
 
     def update(self):
@@ -959,25 +995,74 @@ class evoSlaveEntity(evoEntity):
 
     def __init__(self, hass, client, objRef):
         """Initialize the evohome evohome Heating/DHW zone."""
-        self.hass = hass
-        self.client = client
+        super().__init__(hass, client, objRef)
 
         self._id = objRef.zoneId  # for DHW, zoneId is == objRef.dhwId
-        self._obj = objRef
-
         self._assumed_state = True  # is this right for polled IOT devices?
 
-# create a listener for update packets...
-        hass.helpers.dispatcher.async_dispatcher_connect(
-            DISPATCHER_EVOHOME,
-            self._connect
-        )  # for: def async_dispatcher_connect(signal, target)
+        if self._obj.zone_type == 'domesticHotWater':
+            self._config = hass.data[DATA_EVOHOME]['config']
+            self._install = hass.data[DATA_EVOHOME]['install'] \
+                ['gateways'][0]['temperatureControlSystems'][0]['dhw']
+            self._status = hass.data[DATA_EVOHOME]['status']['dhw']
+        else:
+            for _zone in hass.data[DATA_EVOHOME]['install'] \
+                ['gateways'][0]['temperatureControlSystems'][0]['zones']:
+                if _zone['zoneId'] == self._id:
+                    self._install = _zone
+                    break
+            for _zone in hass.data[DATA_EVOHOME]['status']['zones']:
+                if _zone['zoneId'] == self._id:
+                    self._status = _zone
+                    break
+        
+        if self._config[CONF_USE_SCHEDULES]:
+            _LOGGER.info(
+                "Calling v2 API [1 request(s)]: zone.schedule(Zone=%s)...", 
+                self._id
+            )
+#           self.schedule = {}
+            self._schedule = self._obj.schedule()
+            self._schedule['refreshed'] = datetime.now()
+        else:
+            self._schedule = None
 
-# Ensure to Update immediately after entity has initialized (how?)
-#       self._should_poll = False
+        _LOGGER.info("ZZ, self._id: %s, self._config = %s", self._id, self._config)
+        _LOGGER.info("ZZ, self._id: %s, self._install = %s", self._id, self._install)
+        _LOGGER.info("ZZ, self._id: %s, self._status = %s", self._id, self._status)
+        _LOGGER.info("ZZ, self._id: %s, self._schedule = %s", self._id, self._schedule)
 
-        _LOGGER.info("__init__(%s)", self._id + " [" + self.name + "]")
-        return None  ## should return None
+        _LOGGER.info("__init__(Slave=%s)", self._id + " [" + self.name + "]")
+        return None  # __init__() should return None
+
+    @callback
+    def _connect(self, packet):
+        """Process a dispatcher connect."""
+        _LOGGER.info(
+            "%s has received a '%s' packet from %s",
+            self._id + " [" + self.name + "]",
+            packet['signal'],
+            packet['sender']
+        )
+
+        if packet['signal'] == 'update':
+            _LOGGER.info(
+                "%s is calling schedule_update_ha_state(force_refresh=True)...",
+                self._id + " [" + self.name + "]"
+            )
+#           self.update()
+            self._assumed_state = False
+            self.async_schedule_update_ha_state(force_refresh=True)
+
+        if packet['signal'] == 'assume':
+            _LOGGER.info(
+                "%s is calling schedule_update_ha_state(force_refresh=False)...",
+                self._id + " [" + self.name + "]"
+            )
+            self._assumed_state = True
+            self.async_schedule_update_ha_state(force_refresh=False)
+
+        return None
 
     @property
     def supported_features(self):
@@ -993,9 +1078,9 @@ class evoSlaveEntity(evoEntity):
     @property
     def operation_list(self):
         """Return the list of operating modes of the Heating/DHW zone."""
-# this list is hard-coded fro a particular order
+# this list is hard-coded so for a particular order
 #       if self._obj.zone_type != 'domesticHotWater':
-#           _oplist = self._getZoneById(self._id, 'config') \
+#           _oplist = self._install \
 #               [_SETPOINT_CAPABILITIES]['allowedSetpointModes']
         _oplist = (EVO_FOLLOW, EVO_TEMPOVER, EVO_PERMOVER) # trying...
 #       _oplist = [EVO_FOLLOW, EVO_TEMPOVER, EVO_PERMOVER] # this works
@@ -1006,11 +1091,9 @@ class evoSlaveEntity(evoEntity):
     def current_operation(self):
         """Return the current operating mode of the Heating/DHW zone."""
         if self._obj.zone_type == 'domesticHotWater':
-            _opmode = self.hass.data[DATA_EVOHOME]['status']['dhw'] \
-                ['stateStatus']['mode']
+            _opmode = self._status['stateStatus']['mode']
         else:
-            _opmode = self._getZoneById(self._id, 'status') \
-                [_SETPOINT_STATUS]['setpointMode']
+            _opmode = self._status[_SETPOINT_STATUS]['setpointMode']
 
         _LOGGER.info("current_operation(%s) = %s", self._id, _opmode)
         return _opmode
@@ -1055,14 +1138,9 @@ class evoSlaveEntity(evoEntity):
     @property
     def current_temperature(self):
         """Return the current temperature of the Heating/DHW zone."""
-# TBD: use client's state date rather than hass.data[DATA_EVOHOME]['status']
-        if self._obj.zone_type == 'domesticHotWater':
-            _status = self.hass.data[DATA_EVOHOME]['status']['dhw']
-        else:
-            _status = self._getZoneById(self._id, 'status')
-
-        if _status['temperatureStatus']['isAvailable']:
-            _temp = _status['temperatureStatus']['temperature']
+# TBD: use object's state date rather than hass.data[DATA_EVOHOME]['status']
+        if self._status['temperatureStatus']['isAvailable']:
+            _temp = self._status['temperatureStatus']['temperature']
             _LOGGER.debug("current_temperature(%s) = %s", self._id, _temp)
         else:
             _temp = None
@@ -1077,8 +1155,7 @@ class evoSlaveEntity(evoEntity):
         if self._obj.zone_type == 'domesticHotWater':
             _temp = None
         else:
-            _temp = self._getZoneById(self._id, 'config') \
-                [_SETPOINT_CAPABILITIES]['minHeatSetpoint']
+            _temp = self._install[_SETPOINT_CAPABILITIES]['minHeatSetpoint']
 
         _LOGGER.debug("min_temp(%s) = %s", self._id, _temp)
         return _temp
@@ -1091,8 +1168,7 @@ class evoSlaveEntity(evoEntity):
         if self._obj.zone_type == 'domesticHotWater':
             _temp = None
         else:
-            _temp = self._getZoneById(self._id, 'config') \
-                [_SETPOINT_CAPABILITIES]['maxHeatSetpoint']
+            _temp = self._install[_SETPOINT_CAPABILITIES]['maxHeatSetpoint']
 
         _LOGGER.debug("max_temp(%s) = %s", self._id, _temp)
         return _temp
@@ -1101,7 +1177,7 @@ class evoSlaveEntity(evoEntity):
     def target_temperature_step(self):
         """Return the step of setpont (target temp) of the Heating zone."""
 # Currently only applies to Heating zones (SUPPORT_TARGET_TEMPERATURE), not DHW
-#       _step = self._getZoneById(self._id, 'config') \
+#       _step = self._config \
 #           [_SETPOINT_CAPABILITIES]['valueResolution']
         if self._obj.zone_type == 'domesticHotWater':
             _step = None
@@ -1122,8 +1198,8 @@ class evoSlaveEntity(evoEntity):
     def precision(self):
         """Return the temperature precision to use in the frontend UI."""
         if self._obj.zone_type == 'domesticHotWater':
-            _precision = PRECISION_WHOLE
-        elif self.hass.data[DATA_EVOHOME]['config'][CONF_HIGH_PRECISION]:
+            _precision = PRECISION_WHOLE  # Honeywell has (e.g.) 62C, not 62.0C
+        elif self._config[CONF_HIGH_PRECISION]:
             _precision = PRECISION_TENTHS
         else:
             _precision = PRECISION_HALVES
@@ -1164,42 +1240,13 @@ class evoSlaveEntity(evoEntity):
         """Get the latest state data (e.g. temp.) of the Heating/DHW zone."""
 # This function is maintained by the Controller, so I am not sure should be 
 # done here, if anything. Maybe check object references?
-#       ec_status = self.hass.data[DATA_EVOHOME]['status']['dhw']
+#       ec_status = self._status['dhw']
 #       if ec_status is None or ec_status == {}:
 #           _LOGGER.error("update(%s) ec_status = {}")
 #       else:
 #           _LOGGER.debug("update(%s) ec_status = %s", ec_status)
         _LOGGER.debug("update(%s) = %s", self._id)
         return True
-
-    @callback
-    def _connect(self, packet):
-        """Process a dispatcher connect."""
-        _LOGGER.info(
-            "%s has received a '%s' packet from %s",
-            self._id + " [" + self.name + "]",
-            packet['signal'],
-            packet['sender']
-        )
-
-        if packet['signal'] == 'update':
-            _LOGGER.info(
-                "%s is calling schedule_update_ha_state(force_refresh=True)...",
-                self._id + " [" + self.name + "]"
-            )
-#           self.update()
-            self._assumed_state = False
-            self.async_schedule_update_ha_state(force_refresh=True)
-
-        if packet['signal'] == 'assume':
-            _LOGGER.info(
-                "%s is calling schedule_update_ha_state(force_refresh=False)...",
-                self._id + " [" + self.name + "]"
-            )
-            self._assumed_state = True
-            self.async_schedule_update_ha_state(force_refresh=False)
-
-        return None
 
 
 
@@ -1209,8 +1256,8 @@ class evoZone(evoSlaveEntity, ClimateDevice):
     @property
     def _sched_temperature(self, datetime=None):
         """Return the temperature we try to reach."""
-        _temp = self._getZoneById(self._id, 'schedule')
-
+        _temp = self._schedule
+# TBA
         _LOGGER.debug(
             "_sched_temperature(Zone=%s) = %s", 
             self._id, 
@@ -1229,19 +1276,18 @@ class evoZone(evoSlaveEntity, ClimateDevice):
         _cont_opmode = self.hass.data[DATA_EVOHOME]['status'] \
             ['systemModeStatus']['mode']
 
-
+            
 # 1: Basic heuristics...
-        if self.hass.data[DATA_EVOHOME]['config'][CONF_USE_HEURISTICS]:
+        if self._config[CONF_USE_HEURISTICS]:
             if _cont_opmode == EVO_AWAY:    _state = EVO_AWAY      #(& target_temp = 10)
             if _cont_opmode == EVO_HEATOFF: _state = EVO_FROSTMODE #(& target_temp = 5)
 
             _LOGGER.warn("state(Zone=%s) = %s (using heuristics)", self._id, _state)
 
+        _LOGGER.info("%s._status[%s][%s] = %s", self._id, _SETPOINT_STATUS, _TARGET_TEMPERATURE, self._status)
 
-        _zone = self._getZoneById(self._id, 'status')
-
-        _zone_target = _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE]
-        _zone_opmode = _zone[_SETPOINT_STATUS]['setpointMode']
+        _zone_target = self._status[_SETPOINT_STATUS][_TARGET_TEMPERATURE]
+        _zone_opmode = self._status[_SETPOINT_STATUS]['setpointMode']
 
         
 # 2: Heuristics for OpenWindow mode...
@@ -1338,14 +1384,14 @@ class evoZone(evoSlaveEntity, ClimateDevice):
 
         _temp = None
 
-        if self.hass.data[DATA_EVOHOME]['config'][CONF_USE_HEURISTICS]:
+        if self._config[CONF_USE_HEURISTICS]:
         # get the system's current operating mode
-            _opmode = self.hass.data[DATA_EVOHOME]['status'] \
-                ['systemModeStatus']['mode']
+            _cont_opmode = self.hass.data[DATA_EVOHOME]['status'] \
+            ['systemModeStatus']['mode']
 
-            if _opmode == EVO_HEATOFF:
+            if _cont_opmode == EVO_HEATOFF:
                 _temp = 5
-            elif _opmode == EVO_AWAY:
+            elif _cont_opmode == EVO_AWAY:
                 _temp = 10
 
             _LOGGER.info(
@@ -1355,8 +1401,7 @@ class evoZone(evoSlaveEntity, ClimateDevice):
             )
 
         if _temp is None:
-            _temp = self._getZoneById(self._id, 'status') \
-                [_SETPOINT_STATUS][_TARGET_TEMPERATURE]
+            _temp = self._status[_SETPOINT_STATUS][_TARGET_TEMPERATURE]
 
             _LOGGER.info(
                 "target_temperature(Zone=%s) = %s (latest actual)",
@@ -1382,24 +1427,23 @@ class evoZone(evoSlaveEntity, ClimateDevice):
 
 ## This line requires only 1 location/controller, the next works for 1+
 #       zone = self.client._get_single_heating_system().zones_by_id([self._id])
-        zone = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id([self._id])
+#       zone = self.client.locations[0]._gateways[0]._control_systems[0].zones_by_id([self._id])
 
-        _zone = self._getZoneById(self._id, 'status')
-        _target_temperature = _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE]
-#XX     _current_operation  = _zone[_SETPOINT_STATUS]['setpointMode']
+        _target_temperature = self._status[_SETPOINT_STATUS][_TARGET_TEMPERATURE]
+#XX     _current_operation  = self._status[_SETPOINT_STATUS]['setpointMode']
 
         if operation_mode == EVO_FOLLOW:
             _LOGGER.debug("Calling v2 API [? request(s)]: zone.cancel_temp_override()...",)
-            zone.cancel_temp_override(zone)
-            setpoint = self._getZoneSchedTemp(_zone['zoneId'], datetime.now())  ## Throws: KeyError: ("zone '", '3449703', "' not in dataSource")
+            self._obj.cancel_temp_override(self._obj)
+            setpoint = self._getZoneSchedTemp(self._status['zoneId'], datetime.now())  ## Throws: KeyError: ("zone '", '3449703', "' not in dataSource")
 
         else:
             if setpoint is None:
-                setpoint = _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE]
+                setpoint = self._status[_SETPOINT_STATUS][_TARGET_TEMPERATURE]
 
         if operation_mode == EVO_PERMOVER:
             _LOGGER.debug("Calling v2 API [? request(s)]: zone.set_temperature(%s)...", setpoint)
-            zone.set_temperature(setpoint)  ## override target temp indefinitely
+            self._obj.set_temperature(setpoint)  ## override target temp indefinitely
 
 # TBA this code is wrong ...
         if operation_mode == EVO_TEMPOVER:
@@ -1410,8 +1454,8 @@ class evoZone(evoSlaveEntity, ClimateDevice):
             zone.set_temperature(setpoint, until)  ## override target temp (for a hour)
 
         _LOGGER.debug("Action completed, updating internal state data...")
-        _zone[_SETPOINT_STATUS]['setpointMode'] = operation_mode
-        _zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] = setpoint
+        self._status[_SETPOINT_STATUS]['setpointMode'] = operation_mode
+        self._status[_SETPOINT_STATUS][_TARGET_TEMPERATURE] = setpoint
 
         _LOGGER.debug(" - calling: controller.schedule_update_ha_state()")
         self.async_schedule_update_ha_state(force_refresh=False)
@@ -1435,7 +1479,7 @@ class evoZone(evoSlaveEntity, ClimateDevice):
 #           _LOGGER.error("set_temperature(temperature=%s) is None!", _temperature)
             return False
 
-        _zone = self._getZoneById(self._id, 'config')
+        _zone = self._config
 
         _max_temp = _zone[_SETPOINT_CAPABILITIES]['maxHeatSetpoint']
         if _temperature > _max_temp:
@@ -1462,8 +1506,8 @@ class evoZone(evoSlaveEntity, ClimateDevice):
         self._obj.set_temperature(_temperature, _until)
 
 # TBA: first update hass.data[DOMAIN]...
-        if self.hass.data[DATA_EVOHOME]['config'][CONF_USE_HEURISTICS]:
-            for zone in self.hass.data[DATA_EVOHOME]['status']['zones']:
+        if self._config[CONF_USE_HEURISTICS]:
+            for zone in self._status['zones']:
                 if zone['zoneId'] == self._id:
                     zone[_SETPOINT_STATUS][_TARGET_TEMPERATURE] = _temperature
                     if _until is None:
@@ -1489,7 +1533,7 @@ class evoDhwEntity(evoSlaveEntity):
         DHW_STATES = {STATE_ON : 'On', STATE_OFF : 'Off'}
         _state = None
 
-        if self.hass.data[DATA_EVOHOME]['config'][CONF_USE_HEURISTICS]:
+        if self._config[CONF_USE_HEURISTICS]:
             _cont_opmode = self.hass.data[DATA_EVOHOME]['status'] \
                 ['systemModeStatus']['mode']
 
@@ -1499,8 +1543,7 @@ class evoDhwEntity(evoSlaveEntity):
 
 # if we haven't yet figured out the DHW's state as yet, then:
         if _state is None:
-            _state = self.hass.data[DATA_EVOHOME]['status']['dhw'] \
-                ['stateStatus']['state']
+            _state = self._status['stateStatus']['state']
 
             if self.assumed_state:
                 _LOGGER.debug("_get_state(DHW=%s), state is %s (assumed)", self._id, _state)
@@ -1533,7 +1576,7 @@ class evoDhwEntity(evoSlaveEntity):
         _LOGGER.info("Calling v2 API [1 request(s)]: dhw._set_dhw(%s)...", _data)
         self._obj._set_dhw(_data)
 
-        self.hass.data[DATA_EVOHOME]['status']['dhw'] \
+        self._status['dhw'] \
             ['stateStatus']['state'] = _state
         self._assumed_state = True
         self.async_schedule_update_ha_state(force_refresh=False)

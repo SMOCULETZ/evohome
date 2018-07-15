@@ -32,7 +32,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     tcsObjRef = ec_api.locations[ec_idx]._gateways[0]._control_systems[0]
 
     _LOGGER.info(
-        "Controller object [idx=%s]: Found, id: %s [%s], type: %s",
+        "Found Controller object [idx=%s]: id: %s [%s], type: %s",
         ec_idx,
         tcsObjRef.systemId,
         tcsObjRef.location.name,
