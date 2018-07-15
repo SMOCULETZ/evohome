@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 def setup_platform(hass, config, add_devices, discovery_info=None):
     """Set up a Honeywell evohome CH/DHW system."""
 
-    _LOGGER.info("Started: setup_platform()")
+    _LOGGER.debug("Started: setup_platform()")
 
 # Pull out the domain configuration from hass.data
     ec_api = hass.data[DATA_EVOHOME]['evohomeClient']
@@ -76,5 +76,5 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 # Now, for efficiency) add controller and all zones in a single call
     add_devices([master] + slaves, False)
 
-    _LOGGER.info("Finished: setup_platform()")
+    _LOGGER.debug("Finished: setup_platform()")
     return True
