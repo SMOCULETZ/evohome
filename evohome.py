@@ -398,8 +398,7 @@ def _returnTempsAndModes(domain_data, high_precision=False):
 
     if high_precision is True and len(client.locations) > 1:
         _LOGGER.warn(
-            "Unable to increase precision of temperatures via the v1 api as \
-            there is more than one Location/TCS.  Continuing with v2 temps."
+            "Unable to increase precision of temperatures via the v1 api as there is more than one Location/TCS.  Continuing with v2 temps."
         )
         
     elif high_precision is True:
